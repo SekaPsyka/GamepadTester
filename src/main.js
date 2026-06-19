@@ -4,7 +4,7 @@ import autoTable from "jspdf-autotable";
 import { applyDeadzone, detectControllerType, getConnectedGamepads, getLabelsFor, CHATTER_THRESHOLD_MS } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
-import { MashSequenceTest, gradeForChatter } from "./mashTest.js";
+import { MashSequenceTest, gradeForChatter, buildMashVerdict } from "./mashTest.js";
 
 const app = document.getElementById("app");
 
@@ -562,6 +562,7 @@ function renderMashSummaryTable(results) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
+  const unreliableButtons = [];
   for (const r of results) {
     const grade = gradeForChatter(r.chatterCount, r.pressCount);
     const row = document.createElement("tr");
@@ -574,12 +575,35 @@ function renderMashSummaryTable(results) {
     });
     const gradeTd = document.createElement("td");
     gradeTd.className = `mash-grade-${grade.key}`;
-    gradeTd.textContent = grade.label;
+    gradeTd.textContent = r.reliable === false ? `⚠ ${grade.label}` : grade.label;
+    if (r.reliable === false) {
+      gradeTd.title = `Mesure perturbée: ralentissement de ${r.maxStallGapMs} ms détecté pendant le test (onglet en arrière-plan ou navigateur surchargé). Retester ce bouton recommandé.`;
+      unreliableButtons.push(r.label);
+    }
     row.appendChild(gradeTd);
     tbody.appendChild(row);
   }
   table.appendChild(tbody);
   mashSummaryTableEl.appendChild(table);
+
+  if (unreliableButtons.length) {
+    const warning = document.createElement("p");
+    warning.className = "note mash-reliability-warning";
+    warning.textContent = `⚠ Mesure potentiellement perturbée pour: ${unreliableButtons.join(", ")} — un ralentissement du navigateur a été détecté pendant ce test (onglet en arrière-plan, charge CPU...). Reteste ce(s) bouton(s) avant de conclure.`;
+    mashSummaryTableEl.appendChild(warning);
+  }
+
+  const TONE_TO_GRADE_CLASS = { ok: "excellent", warn: "fair", bad: "poor", neutral: "na" };
+  const verdict = buildMashVerdict(results);
+  const verdictEl = document.createElement("p");
+  verdictEl.className = `mash-verdict mash-grade-${TONE_TO_GRADE_CLASS[verdict.tone]}`;
+  verdictEl.textContent = verdict.text;
+  mashSummaryTableEl.appendChild(verdictEl);
+
+  const limits = document.createElement("p");
+  limits.className = "note mash-limits-note";
+  limits.textContent = "Ce diagnostic dépend du navigateur et du système (fréquence de lecture de la manette, throttling en arrière-plan...) — il donne une bonne indication mais ne remplace pas un diagnostic matériel certifié.";
+  mashSummaryTableEl.appendChild(limits);
 }
 
 function updateMashRunningUI(now) {
@@ -746,6 +770,8 @@ function buildDiagnosticReport() {
           pressCount: r.pressCount,
           pressesPerSecond: Number(r.pressesPerSecond.toFixed(1)),
           chatterCount: r.chatterCount,
+          reliable: r.reliable,
+          maxStallGapMs: r.maxStallGapMs,
         }))
       : null,
   };
@@ -991,6 +1017,7 @@ function buildDiagnosticPdf(report) {
     doc.setFont(undefined, "normal");
     y += 7;
     const mashGrades = report.mashTest.map((r) => gradeForChatter(r.chatterCount, r.pressCount));
+    const unreliableLabels = report.mashTest.filter((r) => r.reliable === false).map((r) => r.label);
     autoTable(doc, {
       startY: y,
       margin: { left: PDF_MARGIN, right: PDF_MARGIN },
@@ -1000,7 +1027,7 @@ function buildDiagnosticPdf(report) {
         String(r.pressCount),
         r.pressesPerSecond.toFixed(1),
         String(r.chatterCount),
-        mashGrades[i].label,
+        r.reliable === false ? `${mashGrades[i].label} (*)` : mashGrades[i].label,
       ]),
       theme: "grid",
       headStyles: { fillColor: PDF_MAGENTA, textColor: 255 },
@@ -1012,7 +1039,27 @@ function buildDiagnosticPdf(report) {
         }
       },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + (unreliableLabels.length ? 5 : 10);
+    if (unreliableLabels.length) {
+      doc.setFontSize(8);
+      doc.setTextColor(...PDF_STATUS_COLORS.warn);
+      const warnLines = doc.splitTextToSize(
+        `(*) Ralentissement du navigateur détecté pendant le test sur: ${unreliableLabels.join(", ")} — mesure peu fiable pour ce(s) bouton(s), à retester.`,
+        PDF_CONTENT_WIDTH - 4,
+      );
+      doc.text(warnLines, PDF_MARGIN + 2, y);
+      y += warnLines.length * 4 + 6;
+      doc.setTextColor(...PDF_DARK);
+    }
+    const verdict = buildMashVerdict(report.mashTest);
+    doc.setFontSize(9);
+    doc.setFont(undefined, "bold");
+    doc.setTextColor(...PDF_STATUS_COLORS[verdict.tone]);
+    const verdictLines = doc.splitTextToSize(verdict.text, PDF_CONTENT_WIDTH - 4);
+    doc.text(verdictLines, PDF_MARGIN + 2, y);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(...PDF_DARK);
+    y += verdictLines.length * 4.5 + 10;
   } else {
     doc.setFontSize(10);
     doc.setTextColor(...PDF_DARK);
@@ -1058,7 +1105,19 @@ function buildDiagnosticPdf(report) {
     doc.setFontSize(10);
     doc.setTextColor(...PDF_DARK);
     doc.text("Aucune capture effectuée.", PDF_MARGIN + 2, y);
+    y += 10;
   }
+
+  y = pdfSectionHeader(doc, "Limites de ce diagnostic", y, PDF_DARK);
+  doc.setFontSize(9);
+  doc.setTextColor(...PDF_DARK);
+  const limitsLines = doc.splitTextToSize(
+    "Ce rapport dépend du navigateur et du système utilisés (fréquence de lecture de la manette, throttling d'un onglet en arrière-plan, pilote...). " +
+      "Il donne une bonne indication de l'état de la manette mais ne remplace pas un diagnostic matériel certifié. " +
+      "Un résultat isolé sur un seul bouton n'implique pas forcément un défaut — reteste avant de conclure, surtout si le reste du diagnostic est bon.",
+    PDF_CONTENT_WIDTH - 4,
+  );
+  doc.text(limitsLines, PDF_MARGIN + 2, y);
 
   return doc;
 }
@@ -1131,7 +1190,13 @@ function startPollRateMeter() {
 }
 startPollRateMeter();
 
+let lastFrameTime = performance.now();
+
 function loop() {
+  const frameNow = performance.now();
+  const frameGapMs = frameNow - lastFrameTime;
+  lastFrameTime = frameNow;
+
   const connectedCount = getConnectedGamepads().length;
   if (connectedCount !== lastPadCount) {
     lastPadCount = connectedCount;
@@ -1152,10 +1217,15 @@ function loop() {
     }
 
     pollRateEl.textContent = pollRateHz;
-    const now = performance.now();
+    const now = frameNow;
+    // pad.timestamp est l'horodatage natif du driver pour le dernier état lu — plus précis
+    // que le temps de la frame rAF pour dater les transitions presse/relâche, car il ne
+    // dépend pas du moment où le navigateur a exécuté la frame.
+    const gamepadTimestamp = Number.isFinite(pad.timestamp) && pad.timestamp > 0 ? pad.timestamp : null;
+    const eventTime = gamepadTimestamp ?? now;
 
     if (mashTest && !mashTest.finished) {
-      mashTest.feed(pad.buttons, now);
+      mashTest.feed(pad.buttons, now, frameGapMs, gamepadTimestamp);
       if (mashTest.finished) {
         lastMashResults = mashTest.results;
         renderMashSummaryTable(lastMashResults);
@@ -1215,11 +1285,11 @@ function loop() {
         const latency = Number.isFinite(pad.timestamp) && pad.timestamp > 0 ? now - pad.timestamp : null;
         const label = currentLabels[i] || `Bouton ${i}`;
         const sinceRelease = lastReleaseTimes[i];
-        if (sinceRelease != null && now - sinceRelease < CHATTER_THRESHOLD_MS) {
+        if (sinceRelease != null && eventTime - sinceRelease < CHATTER_THRESHOLD_MS) {
           chatterTotal++;
           chatterByButton.set(label, (chatterByButton.get(label) || 0) + 1);
           chatterCountEl.textContent = chatterTotal;
-          logPress(`⚠ Chatter — ${label} re-déclenché ${(now - sinceRelease).toFixed(1)} ms après relâche`, null);
+          logPress(`⚠ Chatter — ${label} re-déclenché ${(eventTime - sinceRelease).toFixed(1)} ms après relâche`, null);
           if (cell) {
             cell.classList.add("chatter");
             setTimeout(() => cell.classList.remove("chatter"), 400);
@@ -1229,7 +1299,7 @@ function loop() {
         }
       }
       if (!pressed && wasPressed) {
-        lastReleaseTimes[i] = now;
+        lastReleaseTimes[i] = eventTime;
       }
       prevButtonStates[i] = pressed;
     });

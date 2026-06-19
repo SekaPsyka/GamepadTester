@@ -554,3 +554,20 @@ select option {
 .mash-grade-fair { color: var(--neon-yellow); }
 .mash-grade-poor { color: var(--accent-alt); }
 .mash-grade-na { color: var(--text-dim); }
+
+.mash-reliability-warning {
+  color: var(--neon-yellow);
+  margin-top: 8px;
+}
+
+.mash-verdict {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 12px 0 0;
+  text-align: left;
+}
+
+.mash-limits-note {
+  margin-top: 10px;
+  opacity: 0.75;
+}
