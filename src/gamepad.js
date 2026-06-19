@@ -6,6 +6,10 @@ export const LABEL_SETS = {
 
 export const BUTTON_LABELS = LABEL_SETS.xbox;
 
+// Un bouton qui se relâche puis se ré-enfonce plus vite que ça ne peut pas être
+// une vraie double-pression humaine — c'est un signe de chatter/contact usé.
+export const CHATTER_THRESHOLD_MS = 60;
+
 export function detectControllerType(id = "") {
   const lower = id.toLowerCase();
   if (/xbox|xinput/.test(lower)) return "xbox";

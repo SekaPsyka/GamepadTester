@@ -1,9 +1,10 @@
 import "./style.css";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { applyDeadzone, detectControllerType, getConnectedGamepads, getLabelsFor } from "./gamepad.js";
+import { applyDeadzone, detectControllerType, getConnectedGamepads, getLabelsFor, CHATTER_THRESHOLD_MS } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
+import { MashSequenceTest } from "./mashTest.js";
 
 const app = document.getElementById("app");
 
@@ -22,6 +23,7 @@ app.innerHTML = `
         <label class="field">Manette<select id="padSelect"><option value="">—</option></select></label>
       </div>
       <div class="header-actions">
+        <button id="openMashTestBtn" title="Teste chaque bouton un par un: appuie le plus de fois possible pendant la durée choisie pour détecter chatter, doubles-déclenchements et boutons lents">Diagnostic des boutons</button>
         <button id="exportReportBtn" title="Exporte un rapport de diagnostic en PDF avec l'état actuel de la manette">Exporter rapport (PDF)</button>
         <button id="resetDataBtn" class="danger" title="Réinitialise la latence, le chatter, les calibrations, le drift, l'historique et les captures filaire/sans-fil">Réinitialiser les données</button>
       </div>
@@ -135,6 +137,44 @@ app.innerHTML = `
       </div>
       <p class="note" id="compareDelta"></p>
     </section>
+  </div>
+
+  <div class="mash-overlay" id="mashOverlay">
+    <div class="mash-panel">
+      <div id="mashSetup">
+        <h2>Diagnostic des boutons (mashing)</h2>
+        <p class="note">Le test passe en revue chaque bouton détecté du mapping actuel. Pour chacun, appuie le plus de fois possible pendant la durée choisie — le chrono démarre à ton premier appui. Permet de repérer le chatter, les doubles-déclenchements fantômes et les boutons lents à revenir en position.</p>
+        <p class="note" id="mashSetupWarning"></p>
+        <label class="field">Durée par bouton
+          <select id="mashDuration">
+            <option value="5000">5 secondes</option>
+            <option value="10000">10 secondes</option>
+          </select>
+        </label>
+        <div class="mash-actions">
+          <button id="mashStartBtn">Démarrer le test</button>
+          <button id="mashCancelSetupBtn" class="danger">Annuler</button>
+        </div>
+      </div>
+      <div id="mashRunning" class="hidden">
+        <p class="note" id="mashProgress"></p>
+        <h2 id="mashCurrentLabel"></h2>
+        <div class="mash-timer-bar-bg"><div class="mash-timer-bar-fill" id="mashTimerFill"></div></div>
+        <div class="mash-count" id="mashCount">0</div>
+        <p class="note">appuis</p>
+        <div class="mash-actions">
+          <button id="mashAbortBtn" class="danger">Arrêter le test</button>
+        </div>
+      </div>
+      <div id="mashSummary" class="hidden">
+        <h2>Résultat du diagnostic des boutons</h2>
+        <div id="mashSummaryTable"></div>
+        <div class="mash-actions">
+          <button id="mashRetestBtn">Refaire le test</button>
+          <button id="mashCloseBtn">Fermer</button>
+        </div>
+      </div>
+    </div>
   </div>
 `;
 
@@ -471,6 +511,114 @@ function setupCalibration(side, buttonId, resultId, resetId) {
 setupCalibration("left", "leftCalibBtn", "leftCalibResult", "leftCalibReset");
 setupCalibration("right", "rightCalibBtn", "rightCalibResult", "rightCalibReset");
 
+const mashOverlay = document.getElementById("mashOverlay");
+const mashSetupEl = document.getElementById("mashSetup");
+const mashRunningEl = document.getElementById("mashRunning");
+const mashSummaryEl = document.getElementById("mashSummary");
+const mashDurationSelect = document.getElementById("mashDuration");
+const mashProgressEl = document.getElementById("mashProgress");
+const mashCurrentLabelEl = document.getElementById("mashCurrentLabel");
+const mashTimerFillEl = document.getElementById("mashTimerFill");
+const mashCountEl = document.getElementById("mashCount");
+const mashSummaryTableEl = document.getElementById("mashSummaryTable");
+const mashSetupWarningEl = document.getElementById("mashSetupWarning");
+const mashStartBtnEl = document.getElementById("mashStartBtn");
+
+let mashTest = null;
+let lastMashResults = null;
+
+function showMashScreen(screen) {
+  mashSetupEl.classList.toggle("hidden", screen !== "setup");
+  mashRunningEl.classList.toggle("hidden", screen !== "running");
+  mashSummaryEl.classList.toggle("hidden", screen !== "summary");
+}
+
+function closeMashOverlay() {
+  mashOverlay.classList.remove("visible");
+}
+
+function renderMashSummaryTable(results) {
+  mashSummaryTableEl.replaceChildren();
+  const table = document.createElement("table");
+  table.className = "mash-table";
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const text of ["Bouton", "Appuis", "Appuis/s", "Chatter"]) {
+    const th = document.createElement("th");
+    th.textContent = text;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const r of results) {
+    const row = document.createElement("tr");
+    const cells = [r.label, String(r.pressCount), r.pressesPerSecond.toFixed(1), String(r.chatterCount)];
+    cells.forEach((text, i) => {
+      const td = document.createElement("td");
+      if (i > 0) td.className = "mono";
+      td.textContent = text;
+      row.appendChild(td);
+    });
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+  mashSummaryTableEl.appendChild(table);
+}
+
+function updateMashRunningUI(now) {
+  if (!mashTest || mashTest.finished) return;
+  const current = mashTest.currentButton;
+  const waiting = mashTest.windowStart == null;
+  mashProgressEl.textContent = `Bouton ${mashTest.currentIdx + 1} / ${mashTest.queue.length}${waiting ? " — appuie pour démarrer le chrono" : ""}`;
+  mashCurrentLabelEl.textContent = current.label;
+  mashTimerFillEl.style.width = waiting ? "0%" : `${mashTest.progressFraction(now) * 100}%`;
+  mashCountEl.textContent = mashTest.pressCount;
+}
+
+function openMashSetup() {
+  const hasPad = Boolean(getSelectedGamepad());
+  mashSetupWarningEl.textContent = hasPad ? "" : "Aucune manette connectée — branche-la avant de démarrer.";
+  mashStartBtnEl.disabled = !hasPad;
+  showMashScreen("setup");
+}
+
+document.getElementById("openMashTestBtn").addEventListener("click", () => {
+  if (lastMashResults) {
+    renderMashSummaryTable(lastMashResults);
+    showMashScreen("summary");
+  } else {
+    openMashSetup();
+  }
+  mashOverlay.classList.add("visible");
+});
+
+document.getElementById("mashCancelSetupBtn").addEventListener("click", closeMashOverlay);
+
+document.getElementById("mashRetestBtn").addEventListener("click", () => {
+  lastMashResults = null;
+  openMashSetup();
+});
+
+mashStartBtnEl.addEventListener("click", () => {
+  const pad = getSelectedGamepad();
+  if (!pad) return;
+  const durationMs = Number(mashDurationSelect.value);
+  const buttonCount = Math.min(currentLabels.length, pad.buttons.length);
+  const queue = Array.from({ length: buttonCount }, (_, i) => ({ index: i, label: currentLabels[i] || `Bouton ${i}` }));
+  mashTest = new MashSequenceTest(queue, durationMs);
+  showMashScreen("running");
+});
+
+document.getElementById("mashAbortBtn").addEventListener("click", () => {
+  mashTest = null;
+  closeMashOverlay();
+});
+
+document.getElementById("mashCloseBtn").addEventListener("click", closeMashOverlay);
+
 const pressLog = document.getElementById("pressLog");
 const avgLatencyEl = document.getElementById("avgLatency");
 const latencySamples = [];
@@ -549,7 +697,6 @@ let lastReleaseTimes = [];
 let lastPadCount = 0;
 let lastPadId = null;
 
-const CHATTER_THRESHOLD_MS = 60;
 let chatterTotal = 0;
 const chatterByButton = new Map();
 const chatterCountEl = document.getElementById("chatterCount");
@@ -579,6 +726,14 @@ function buildDiagnosticReport() {
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => b.count - a.count),
     wiredVsWirelessComparison: compareSnapshots,
+    mashTest: lastMashResults
+      ? lastMashResults.map((r) => ({
+          label: r.label,
+          pressCount: r.pressCount,
+          pressesPerSecond: Number(r.pressesPerSecond.toFixed(1)),
+          chatterCount: r.chatterCount,
+        }))
+      : null,
   };
 }
 
@@ -626,6 +781,30 @@ function computeDiagnosticVerdict(report) {
       title: "Chatter",
       text: `${report.chatterEventsTotal} événement(s) détecté(s) sur ${report.chatterByButton.length} bouton(s).${detail}`,
     });
+  }
+
+  if (!report.mashTest) {
+    items.push({
+      status: "neutral",
+      title: "Diagnostic des boutons",
+      text: "Aucun test de mashing effectué — chatter et boutons lents non vérifiés bouton par bouton.",
+    });
+  } else {
+    const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
+    if (totalChatter === 0) {
+      items.push({
+        status: "ok",
+        title: "Diagnostic des boutons",
+        text: `Test effectué sur ${report.mashTest.length} bouton(s), aucun chatter détecté pendant le mashing.`,
+      });
+    } else {
+      const worst = [...report.mashTest].sort((a, b) => b.chatterCount - a.chatterCount)[0];
+      items.push({
+        status: totalChatter >= 5 ? "bad" : "warn",
+        title: "Diagnostic des boutons",
+        text: `${totalChatter} événement(s) de chatter détecté(s) pendant le mashing sur ${report.mashTest.length} bouton(s). Bouton le plus touché: ${worst.label} (${worst.chatterCount} fois).`,
+      });
+    }
   }
 
   return items;
@@ -784,6 +963,25 @@ function buildDiagnosticPdf(report) {
     y += 2;
   }
 
+  y = pdfSectionHeader(doc, "Diagnostic des boutons (mashing)", y, PDF_MAGENTA);
+  if (report.mashTest && report.mashTest.length) {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: PDF_MARGIN, right: PDF_MARGIN },
+      head: [["Bouton", "Appuis", "Appuis/s", "Chatter"]],
+      body: report.mashTest.map((r) => [r.label, String(r.pressCount), r.pressesPerSecond.toFixed(1), String(r.chatterCount)]),
+      theme: "grid",
+      headStyles: { fillColor: PDF_MAGENTA, textColor: 255 },
+      styles: { fontSize: 9, textColor: PDF_DARK },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  } else {
+    doc.setFontSize(10);
+    doc.setTextColor(...PDF_DARK);
+    doc.text("Aucun test de réactivité effectué.", PDF_MARGIN + 2, y);
+    y += 10;
+  }
+
   y = pdfSectionHeader(doc, "Comparaison filaire / sans-fil", y, PDF_CYAN);
   const { wired, wireless } = report.wiredVsWirelessComparison;
   if (wired || wireless) {
@@ -859,6 +1057,9 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
   renderCompareSnapshot("wireless");
   renderCompareDelta();
 
+  mashTest = null;
+  lastMashResults = null;
+
   document.getElementById("leftCalibReset").click();
   document.getElementById("rightCalibReset").click();
 });
@@ -914,6 +1115,17 @@ function loop() {
 
     pollRateEl.textContent = pollRateHz;
     const now = performance.now();
+
+    if (mashTest && !mashTest.finished) {
+      mashTest.feed(pad.buttons, now);
+      if (mashTest.finished) {
+        lastMashResults = mashTest.results;
+        renderMashSummaryTable(lastMashResults);
+        showMashScreen("summary");
+      } else {
+        updateMashRunningUI(now);
+      }
+    }
 
     const leftInner = Number(sliders.left.inner.value);
     const leftOuter = Number(sliders.left.outer.value);

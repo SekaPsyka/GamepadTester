@@ -418,3 +418,105 @@ select option {
   color: var(--neon-green);
   margin-top: 12px;
 }
+
+.hidden { display: none; }
+
+.mash-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 7, 16, 0.92);
+  backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.mash-overlay.visible {
+  display: flex;
+}
+
+.mash-panel {
+  width: min(560px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 12%, transparent);
+  text-align: center;
+}
+
+.mash-panel h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--accent);
+}
+
+.mash-panel .field {
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.mash-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+#mashCurrentLabel {
+  font-size: 36px;
+  margin: 18px 0 14px;
+  color: var(--accent-alt);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent-alt) 60%, transparent);
+}
+
+.mash-timer-bar-bg {
+  background: #060710;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.mash-timer-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-alt));
+  transition: width 0.05s linear;
+}
+
+.mash-count {
+  font-size: 48px;
+  font-weight: 700;
+  margin-top: 16px;
+  color: var(--neon-green);
+  font-family: "Consolas", monospace;
+}
+
+.mash-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+  font-size: 12px;
+}
+
+.mash-table th,
+.mash-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--panel-border);
+  text-align: left;
+}
+
+.mash-table th {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.mash-table tbody tr:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
