@@ -369,7 +369,7 @@ function drawDrift(ctx, canvas, history) {
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.strokeStyle = "#39ff8c";
+  ctx.strokeStyle = themeColor("--accent");
   ctx.lineWidth = 1.5;
   for (let i = 0; i < history.length; i++) {
     const y = h / 2 - history[i] * (h / 2 - 4);
