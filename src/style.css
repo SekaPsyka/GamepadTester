@@ -318,6 +318,27 @@ button.danger:hover {
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent-alt) 30%, transparent);
 }
 
+button.btn-highlight {
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+  animation: btn-highlight-pulse 2.6s ease-in-out infinite;
+}
+
+button.btn-highlight:hover {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+@keyframes btn-highlight-pulse {
+  0%, 100% { box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent); }
+  50% { box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 50%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.btn-highlight { animation: none; box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent); }
+}
+
 select, input[type="text"] {
   background: #0d0f18;
   border: 1px solid var(--panel-border);
