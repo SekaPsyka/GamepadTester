@@ -4,7 +4,7 @@ import autoTable from "jspdf-autotable";
 import { applyDeadzone, detectControllerType, getConnectedGamepads, getLabelsFor, CHATTER_THRESHOLD_MS } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
-import { MashSequenceTest } from "./mashTest.js";
+import { MashSequenceTest, gradeForChatter } from "./mashTest.js";
 
 const app = document.getElementById("app");
 
@@ -539,12 +539,21 @@ function closeMashOverlay() {
 
 function renderMashSummaryTable(results) {
   mashSummaryTableEl.replaceChildren();
+
+  const totalPressCount = results.reduce((sum, r) => sum + r.pressCount, 0);
+  const totalChatter = results.reduce((sum, r) => sum + r.chatterCount, 0);
+  const overallGrade = gradeForChatter(totalChatter, totalPressCount);
+  const overall = document.createElement("p");
+  overall.className = `mash-overall-grade mash-grade-${overallGrade.key}`;
+  overall.textContent = `Fiabilité globale: ${overallGrade.label} (${totalChatter} chatter sur ${totalPressCount} appuis)`;
+  mashSummaryTableEl.appendChild(overall);
+
   const table = document.createElement("table");
   table.className = "mash-table";
 
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
-  for (const text of ["Bouton", "Appuis", "Appuis/s", "Chatter"]) {
+  for (const text of ["Bouton", "Appuis", "Appuis/s", "Chatter", "Fiabilité"]) {
     const th = document.createElement("th");
     th.textContent = text;
     headRow.appendChild(th);
@@ -554,6 +563,7 @@ function renderMashSummaryTable(results) {
 
   const tbody = document.createElement("tbody");
   for (const r of results) {
+    const grade = gradeForChatter(r.chatterCount, r.pressCount);
     const row = document.createElement("tr");
     const cells = [r.label, String(r.pressCount), r.pressesPerSecond.toFixed(1), String(r.chatterCount)];
     cells.forEach((text, i) => {
@@ -562,6 +572,10 @@ function renderMashSummaryTable(results) {
       td.textContent = text;
       row.appendChild(td);
     });
+    const gradeTd = document.createElement("td");
+    gradeTd.className = `mash-grade-${grade.key}`;
+    gradeTd.textContent = grade.label;
+    row.appendChild(gradeTd);
     tbody.appendChild(row);
   }
   table.appendChild(tbody);
@@ -790,21 +804,21 @@ function computeDiagnosticVerdict(report) {
       text: "Aucun test de mashing effectué — chatter et boutons lents non vérifiés bouton par bouton.",
     });
   } else {
+    const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
     const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
-    if (totalChatter === 0) {
-      items.push({
-        status: "ok",
-        title: "Diagnostic des boutons",
-        text: `Test effectué sur ${report.mashTest.length} bouton(s), aucun chatter détecté pendant le mashing.`,
-      });
+    const grade = gradeForChatter(totalChatter, totalPressCount);
+    const statusByGrade = { excellent: "ok", good: "ok", fair: "warn", poor: "bad", na: "neutral" };
+
+    let text;
+    if (grade.key === "na") {
+      text = "Pas assez d'appuis enregistrés pendant le diagnostic pour conclure sur la fiabilité des boutons.";
+    } else if (totalChatter === 0) {
+      text = `Test effectué sur ${report.mashTest.length} bouton(s), aucun chatter détecté pendant le mashing — fiabilité ${grade.label.toLowerCase()}.`;
     } else {
       const worst = [...report.mashTest].sort((a, b) => b.chatterCount - a.chatterCount)[0];
-      items.push({
-        status: totalChatter >= 5 ? "bad" : "warn",
-        title: "Diagnostic des boutons",
-        text: `${totalChatter} événement(s) de chatter détecté(s) pendant le mashing sur ${report.mashTest.length} bouton(s). Bouton le plus touché: ${worst.label} (${worst.chatterCount} fois).`,
-      });
+      text = `Fiabilité ${grade.label.toLowerCase()} (${totalChatter} chatter sur ${totalPressCount} appuis pendant le mashing). Bouton le plus touché: ${worst.label} (${worst.chatterCount} fois).`;
     }
+    items.push({ status: statusByGrade[grade.key], title: "Diagnostic des boutons", text });
   }
 
   return items;
@@ -817,6 +831,7 @@ const PDF_CYAN = [0, 130, 150];
 const PDF_MAGENTA = [70, 75, 90];
 const PDF_DARK = [30, 32, 40];
 const PDF_MUTED = [110, 110, 110];
+const PDF_GRADE_STATUS = { excellent: "ok", good: "ok", fair: "warn", poor: "bad", na: "neutral" };
 const PDF_STATUS_COLORS = {
   ok: [30, 150, 90],
   warn: [200, 140, 0],
@@ -965,14 +980,37 @@ function buildDiagnosticPdf(report) {
 
   y = pdfSectionHeader(doc, "Diagnostic des boutons (mashing)", y, PDF_MAGENTA);
   if (report.mashTest && report.mashTest.length) {
+    const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
+    const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
+    const overallGrade = gradeForChatter(totalChatter, totalPressCount);
+    doc.setFontSize(10);
+    doc.setTextColor(...PDF_DARK);
+    doc.setTextColor(...PDF_STATUS_COLORS[PDF_GRADE_STATUS[overallGrade.key]]);
+    doc.setFont(undefined, "bold");
+    doc.text(`Fiabilité globale: ${overallGrade.label} (${totalChatter} chatter sur ${totalPressCount} appuis)`, PDF_MARGIN + 2, y);
+    doc.setFont(undefined, "normal");
+    y += 7;
+    const mashGrades = report.mashTest.map((r) => gradeForChatter(r.chatterCount, r.pressCount));
     autoTable(doc, {
       startY: y,
       margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-      head: [["Bouton", "Appuis", "Appuis/s", "Chatter"]],
-      body: report.mashTest.map((r) => [r.label, String(r.pressCount), r.pressesPerSecond.toFixed(1), String(r.chatterCount)]),
+      head: [["Bouton", "Appuis", "Appuis/s", "Chatter", "Fiabilité"]],
+      body: report.mashTest.map((r, i) => [
+        r.label,
+        String(r.pressCount),
+        r.pressesPerSecond.toFixed(1),
+        String(r.chatterCount),
+        mashGrades[i].label,
+      ]),
       theme: "grid",
       headStyles: { fillColor: PDF_MAGENTA, textColor: 255 },
       styles: { fontSize: 9, textColor: PDF_DARK },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 4) {
+          data.cell.styles.textColor = PDF_STATUS_COLORS[PDF_GRADE_STATUS[mashGrades[data.row.index].key]];
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
     });
     y = doc.lastAutoTable.finalY + 10;
   } else {

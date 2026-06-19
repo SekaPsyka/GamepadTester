@@ -520,3 +520,16 @@ select option {
 .mash-table tbody tr:hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
+
+.mash-overall-grade {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  text-align: left;
+}
+
+.mash-grade-excellent { color: var(--neon-green); }
+.mash-grade-good { color: var(--accent); }
+.mash-grade-fair { color: var(--neon-yellow); }
+.mash-grade-poor { color: var(--accent-alt); }
+.mash-grade-na { color: var(--text-dim); }

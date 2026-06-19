@@ -80,3 +80,32 @@ export class MashSequenceTest {
     return Math.min(1, (now - this.windowStart) / this.durationMs);
   }
 }
+
+// Un peu de chatter est normal: tout switch mécanique rebondit légèrement à la fermeture
+// (typiquement 5-20ms, déjà filtré par notre seuil de détection à 60ms). Ce qui distingue
+// un bruit ponctuel d'un vrai défaut, c'est le TAUX de chatter par rapport au nombre
+// d'appuis, pas un compte brut — 1 événement sur 200 appuis n'a rien à voir avec 1 sur 10.
+export const RELIABILITY_GRADES = {
+  excellent: { key: "excellent", label: "Excellent" },
+  good: { key: "good", label: "Bon" },
+  fair: { key: "fair", label: "Moyen" },
+  poor: { key: "poor", label: "Mauvais" },
+  na: { key: "na", label: "N/A" },
+};
+
+const MIN_PRESSES_FOR_GRADE = 5;
+const FAIR_RATE_THRESHOLD = 0.02;
+const POOR_RATE_THRESHOLD = 0.08;
+
+export function chatterRate(chatterCount, pressCount) {
+  return pressCount > 0 ? chatterCount / pressCount : 0;
+}
+
+export function gradeForChatter(chatterCount, pressCount) {
+  if (pressCount < MIN_PRESSES_FOR_GRADE) return RELIABILITY_GRADES.na;
+  const rate = chatterRate(chatterCount, pressCount);
+  if (rate === 0) return RELIABILITY_GRADES.excellent;
+  if (rate <= FAIR_RATE_THRESHOLD) return RELIABILITY_GRADES.good;
+  if (rate <= POOR_RATE_THRESHOLD) return RELIABILITY_GRADES.fair;
+  return RELIABILITY_GRADES.poor;
+}
