@@ -91,29 +91,59 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel panel--trigger-vibration">
       <h2>Gâchettes &amp; vibration</h2>
-      <div class="trigger-row">
-        <div class="trigger-label"><span>LT</span><span class="mono" id="ltVal">0%</span></div>
-        <div class="trigger-bar-bg"><div class="trigger-bar-fill" id="ltBar"></div></div>
+      <div class="trigger-gauges">
+        <div class="trigger-gauge">
+          <div class="trigger-label"><span>LT</span><span class="mono" id="ltVal">0%</span></div>
+          <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="ltBar"></div></div>
+        </div>
+        <div class="trigger-gauge">
+          <div class="trigger-label"><span>RT</span><span class="mono" id="rtVal">0%</span></div>
+          <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="rtBar"></div></div>
+        </div>
       </div>
-      <div class="trigger-row">
-        <div class="trigger-label"><span>RT</span><span class="mono" id="rtVal">0%</span></div>
-        <div class="trigger-bar-bg"><div class="trigger-bar-fill" id="rtBar"></div></div>
+
+      <p class="note" style="margin:0 0 6px">Historique des gâchettes (<span class="legend-dot legend-dot--accent"></span> LT, <span class="legend-dot legend-dot--accent-alt"></span> RT)</p>
+      <canvas class="graph" id="triggerHistoryGraph" width="1200" height="70"></canvas>
+      <p class="note" title="Une gâchette analogique de qualité varie en douceur. Des marches d'escalier ou des sauts brusques dans ce tracé trahissent une faible résolution du capteur ou un potentiomètre qui commence à dérailler.">Un tracé en escalier ou en dents de scie indique une résolution analogique faible ou un capteur de gâchette usé.</p>
+
+      <div class="vib-section">
+        <div class="vib-section-head">
+          <h3>Vibrations</h3>
+          <span class="vib-status" id="vibStatus">Aucune manette</span>
+        </div>
+
+        <div class="motor-cards">
+          <div class="motor-card" id="motorCardStrong">
+            <div class="motor-card-head"><span>Moteur gauche</span><span class="note">basse fréq. / grave</span></div>
+            <input type="range" id="vibStrongLive" min="0" max="1" step="0.01" value="0" />
+            <div class="motor-card-foot">
+              <span class="mono" id="vibStrongLiveVal">0%</span>
+              <button id="vibStrongTest">Tester 600 ms</button>
+            </div>
+          </div>
+          <div class="motor-card" id="motorCardWeak">
+            <div class="motor-card-head"><span>Moteur droit</span><span class="note">haute fréq. / aiguë</span></div>
+            <input type="range" id="vibWeakLive" min="0" max="1" step="0.01" value="0" />
+            <div class="motor-card-foot">
+              <span class="mono" id="vibWeakLiveVal">0%</span>
+              <button id="vibWeakTest">Tester 600 ms</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="vib-presets">
+          <button id="presetLight">Légère</button>
+          <button id="presetBalanced">Équilibrée</button>
+          <button id="presetIntense">Intense</button>
+          <button id="vibStop" class="danger hidden">Tout arrêter</button>
+        </div>
+        <div class="vib-footnotes">
+          <p class="note">Les curseurs produisent une vibration continue (jusqu'à "Tout arrêter"). Les boutons "Tester" et les préréglages envoient une impulsion de 600 ms.</p>
+          <p class="note" id="vibNote"></p>
+        </div>
       </div>
-      <div class="vibration-controls">
-        <button id="vibWeak">Test moteur droit (haute fréq.)</button>
-        <button id="vibStrong">Test moteur gauche (basse fréq.)</button>
-        <button id="vibStop" class="danger">Stop</button>
-      </div>
-      <p class="note">Les tests ci-dessus s'arrêtent automatiquement après 600 ms. Pour ressentir un moteur en continu, utilisez le curseur ci-dessous puis Stop pour l'arrêter manuellement.</p>
-      <div class="sliders" style="margin-top:10px">
-        <label>Moteur gauche (basse fréq.): <span class="mono" id="vibStrongLiveVal">0%</span></label>
-        <input type="range" id="vibStrongLive" min="0" max="1" step="0.01" value="0" />
-        <label>Moteur droit (haute fréq.): <span class="mono" id="vibWeakLiveVal">0%</span></label>
-        <input type="range" id="vibWeakLive" min="0" max="1" step="0.01" value="0" />
-      </div>
-      <p class="note" id="vibNote"></p>
     </section>
 
     <section class="panel">
@@ -329,26 +359,62 @@ const ltVal = document.getElementById("ltVal");
 const rtVal = document.getElementById("rtVal");
 
 const vibNote = document.getElementById("vibNote");
-document.getElementById("vibWeak").addEventListener("click", () => playRumble(1.0, 0.0));
-document.getElementById("vibStrong").addEventListener("click", () => playRumble(0.0, 1.0));
-document.getElementById("vibStop").addEventListener("click", () => stopLiveRumble());
+const vibStatus = document.getElementById("vibStatus");
+const vibStopBtn = document.getElementById("vibStop");
+const motorCardStrong = document.getElementById("motorCardStrong");
+const motorCardWeak = document.getElementById("motorCardWeak");
 
-function playRumble(weak, strong, duration = 600) {
+let vibrationActive = false;
+
+function setVibrationActive(active) {
+  vibrationActive = active;
+  vibStopBtn.classList.toggle("hidden", !active);
+}
+
+function updateVibStatus() {
+  const pad = getSelectedGamepad();
+  vibStatus.classList.remove("vib-status--ok", "vib-status--warn");
+  if (!pad) {
+    vibStatus.textContent = "Aucune manette";
+  } else if (!pad.vibrationActuator) {
+    vibStatus.textContent = "Non prise en charge";
+    vibStatus.classList.add("vib-status--warn");
+  } else {
+    vibStatus.textContent = "Vibration disponible";
+    vibStatus.classList.add("vib-status--ok");
+  }
+}
+
+// Pulsation visuelle déclenchée par l'intention d'envoi, pas par un retour matériel:
+// l'API ne renvoie aucun état de vibration en cours, donc on stoppe l'animation
+// nous-mêmes (catch / fin de durée) pour ne jamais donner un faux retour positif.
+function pulseMotorCard(card, duration) {
+  card.classList.add("active");
+  setTimeout(() => card.classList.remove("active"), duration);
+}
+
+function playRumble(weak, strong, duration = 600, { cards = [] } = {}) {
   const pad = getSelectedGamepad();
   const actuator = pad?.vibrationActuator;
   if (!actuator) {
     vibNote.textContent = "Vibration non supportée par cette manette/navigateur.";
-    return;
+    return Promise.resolve();
   }
-  actuator
+  for (const card of cards) pulseMotorCard(card, duration);
+  return actuator
     .playEffect("dual-rumble", {
       startDelay: 0,
       duration,
       weakMagnitude: weak,
       strongMagnitude: strong,
     })
-    .then(() => (vibNote.textContent = ""))
-    .catch(() => (vibNote.textContent = "Effet de vibration refusé."));
+    .then(() => {
+      vibNote.textContent = "";
+    })
+    .catch(() => {
+      vibNote.textContent = "Effet de vibration refusé.";
+      resetVibrationUI();
+    });
 }
 
 const vibStrongLive = document.getElementById("vibStrongLive");
@@ -357,13 +423,24 @@ const vibStrongLiveVal = document.getElementById("vibStrongLiveVal");
 const vibWeakLiveVal = document.getElementById("vibWeakLiveVal");
 let liveRumbleTimer = null;
 
-function stopLiveRumble() {
+// Ne fait que remettre l'UI à plat (pas d'appel à playRumble): playRumble appelle
+// cette fonction dans son .catch, donc rappeler playRumble ici créerait une boucle
+// infinie si la manette continue de refuser l'effet (ex: stopLiveRumble -> playRumble
+// -> refus -> resetVibrationUI -> ... si elle rappelait stopLiveRumble).
+function resetVibrationUI() {
   clearInterval(liveRumbleTimer);
   liveRumbleTimer = null;
   vibStrongLive.value = 0;
   vibWeakLive.value = 0;
   vibStrongLiveVal.textContent = "0%";
   vibWeakLiveVal.textContent = "0%";
+  motorCardStrong.classList.remove("active");
+  motorCardWeak.classList.remove("active");
+  setVibrationActive(false);
+}
+
+function stopLiveRumble() {
+  resetVibrationUI();
   playRumble(0, 0, 1);
 }
 
@@ -372,11 +449,17 @@ function syncLiveRumble() {
   const strong = Number(vibStrongLive.value);
   vibWeakLiveVal.textContent = `${Math.round(weak * 100)}%`;
   vibStrongLiveVal.textContent = `${Math.round(strong * 100)}%`;
+  motorCardWeak.classList.toggle("active", weak > 0);
+  motorCardStrong.classList.toggle("active", strong > 0);
 
   clearInterval(liveRumbleTimer);
   liveRumbleTimer = null;
-  if (weak === 0 && strong === 0) return;
+  if (weak === 0 && strong === 0) {
+    setVibrationActive(false);
+    return;
+  }
 
+  setVibrationActive(true);
   // playEffect ne propose pas de mode infini : on rejoue l'effet en boucle
   // pour simuler une vibration continue tant qu'un curseur est actif.
   const refresh = () => playRumble(weak, strong, 300);
@@ -386,6 +469,23 @@ function syncLiveRumble() {
 
 vibStrongLive.addEventListener("input", syncLiveRumble);
 vibWeakLive.addEventListener("input", syncLiveRumble);
+
+document.getElementById("vibStrongTest").addEventListener("click", () =>
+  playRumble(0, 1, 600, { cards: [motorCardStrong] })
+);
+document.getElementById("vibWeakTest").addEventListener("click", () =>
+  playRumble(1, 0, 600, { cards: [motorCardWeak] })
+);
+document.getElementById("presetLight").addEventListener("click", () =>
+  playRumble(0.2, 0.2, 600, { cards: [motorCardStrong, motorCardWeak] })
+);
+document.getElementById("presetBalanced").addEventListener("click", () =>
+  playRumble(0.5, 0.5, 600, { cards: [motorCardStrong, motorCardWeak] })
+);
+document.getElementById("presetIntense").addEventListener("click", () =>
+  playRumble(1, 1, 600, { cards: [motorCardStrong, motorCardWeak] })
+);
+vibStopBtn.addEventListener("click", () => stopLiveRumble());
 
 function themeColor(varName) {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -455,6 +555,37 @@ function drawStick(ctx, canvas, rawX, rawY, adjX, adjY, inner, outer, trail) {
   ctx.shadowBlur = 12;
   ctx.fill();
   ctx.shadowBlur = 0;
+}
+
+const triggerHistoryCanvas = document.getElementById("triggerHistoryGraph");
+const triggerHistoryCtx = triggerHistoryCanvas.getContext("2d");
+const triggerHistoryLT = new Array(triggerHistoryCanvas.width).fill(0);
+const triggerHistoryRT = new Array(triggerHistoryCanvas.width).fill(0);
+
+function drawTriggerHistory(ctx, canvas, ltHistory, rtHistory) {
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = "#1f2333";
+  ctx.beginPath();
+  ctx.moveTo(0, h - 4);
+  ctx.lineTo(w, h - 4);
+  ctx.stroke();
+
+  function drawTrace(history, color) {
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < history.length; i++) {
+      const y = h - 4 - history[i] * (h - 8);
+      if (i === 0) ctx.moveTo(i, y);
+      else ctx.lineTo(i, y);
+    }
+    ctx.stroke();
+  }
+
+  drawTrace(ltHistory, themeColor("--accent"));
+  drawTrace(rtHistory, themeColor("--accent-alt"));
 }
 
 const driftCanvasLeft = document.getElementById("driftGraphLeft");
@@ -1373,6 +1504,7 @@ function loop() {
         currentSilhouetteType = controllerType;
         setSilhouetteType(silhouette, controllerType);
       }
+      updateVibStatus();
     }
 
     const now = frameNow;
@@ -1436,6 +1568,12 @@ function loop() {
     ltVal.textContent = `${Math.round(lt * 100)}%`;
     rtVal.textContent = `${Math.round(rt * 100)}%`;
 
+    triggerHistoryLT.push(lt);
+    triggerHistoryLT.shift();
+    triggerHistoryRT.push(rt);
+    triggerHistoryRT.shift();
+    drawTriggerHistory(triggerHistoryCtx, triggerHistoryCanvas, triggerHistoryLT, triggerHistoryRT);
+
     updateSilhouette(silhouette, pad);
 
     pad.buttons.forEach((btn, i) => {
@@ -1470,6 +1608,7 @@ function loop() {
     });
   } else {
     setConnectedUI(false);
+    updateVibStatus();
   }
 
   requestAnimationFrame(loop);

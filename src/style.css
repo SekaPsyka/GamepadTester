@@ -305,8 +305,23 @@ canvas.stick {
   box-shadow: 0 0 20px color-mix(in srgb, var(--accent-alt) 90%, transparent);
 }
 
-.trigger-row {
-  margin-bottom: 14px;
+.panel--trigger-vibration {
+  /* Le panel voisin (Boutons) varie beaucoup en hauteur selon que la silhouette de
+     manette est affichée ou non. S'étirer pour suivre cette hauteur (comportement
+     grid par défaut) créait un grand vide au milieu du contenu plutôt qu'en bas:
+     on garde donc la hauteur naturelle du contenu, quitte à laisser un espace vide
+     sous la carte plutôt que dans la carte. */
+  align-self: start;
+}
+
+.trigger-gauges {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.trigger-gauge {
+  flex: 1;
 }
 
 .trigger-bar-bg {
@@ -315,6 +330,11 @@ canvas.stick {
   height: 14px;
   overflow: hidden;
   border: 1px solid var(--panel-border);
+}
+
+.trigger-bar-bg--thick {
+  height: 22px;
+  border-radius: 8px;
 }
 
 .trigger-bar-fill {
@@ -332,11 +352,115 @@ canvas.stick {
   margin-bottom: 4px;
 }
 
-.vibration-controls {
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 2px;
+}
+
+.legend-dot--accent {
+  background: var(--accent);
+}
+
+.legend-dot--accent-alt {
+  background: var(--accent-alt);
+}
+
+.vib-section {
+  padding-top: 14px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.vib-section-head {
   display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.vib-section-head h3 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+}
+
+.vib-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.vib-status--ok {
+  color: var(--neon-green);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--neon-green) 50%, transparent);
+}
+
+.vib-status--warn {
+  color: var(--accent-alt);
+}
+
+.motor-cards {
+  display: flex;
+  gap: 12px;
+}
+
+.motor-card {
+  flex: 1;
+  background: #0d0f18;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.motor-card.active {
+  border-color: var(--accent-alt);
+  animation: motor-pulse 0.5s ease-in-out infinite;
+}
+
+@keyframes motor-pulse {
+  0%, 100% { box-shadow: 0 0 6px color-mix(in srgb, var(--accent-alt) 35%, transparent); }
+  50% { box-shadow: 0 0 16px color-mix(in srgb, var(--accent-alt) 75%, transparent); }
+}
+
+.motor-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.motor-card-head .note {
+  margin: 0;
+}
+
+.motor-card input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent-alt);
+}
+
+.motor-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.vib-presets {
+  display: flex;
+  justify-content: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 16px;
   flex-wrap: wrap;
+}
+
+.vib-footnotes {
+  padding-top: 16px;
 }
 
 button {
