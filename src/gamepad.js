@@ -41,3 +41,57 @@ export function getConnectedGamepads() {
 export function getPrimaryGamepad() {
   return getConnectedGamepads()[0] || null;
 }
+
+const REST_SAMPLE_WINDOW_MS = 1000;
+const REST_VARIANCE_THRESHOLD = 0.01;
+const REST_MAGNITUDE_LIMIT = 0.3;
+// Le bruit électrique d'un stick sain reste sous 0.001 au repos, mais la littérature sur
+// le stick drift considère un écart jusqu'à 0.05 comme "acceptable", masquable par une
+// dead zone normale. On se cale juste sous cette borne pour capter un vrai début de
+// dérive sans signaler des manettes saines à cause d'un simple écart de calibration interne.
+export const NEUTRAL_DRIFT_WARN_THRESHOLD = 0.045;
+
+// Détecte le point de repos réel d'un stick en échantillonnant sa position brute
+// uniquement pendant les phases où elle reste stable (faible variance) sans
+// intervention de l'utilisateur, plutôt que de supposer que repos = (0,0). Un stick
+// en début d'usure ne revient souvent pas exactement au centre électrique malgré une
+// position mécanique apparemment neutre, et ce décalage est trop fin pour être jugé
+// fiablement à l'œil sur le canvas.
+export class NeutralDriftTracker {
+  constructor() {
+    this.samples = []; // { x, y, t }
+    this.offset = { x: 0, y: 0 };
+    this.measured = false;
+  }
+
+  update(x, y, now) {
+    this.samples.push({ x, y, t: now });
+    while (this.samples.length && now - this.samples[0].t > REST_SAMPLE_WINDOW_MS) {
+      this.samples.shift();
+    }
+    if (this.samples.length < 10 || now - this.samples[0].t < REST_SAMPLE_WINDOW_MS) return;
+
+    const xs = this.samples.map((s) => s.x);
+    const ys = this.samples.map((s) => s.y);
+    const spreadX = Math.max(...xs) - Math.min(...xs);
+    const spreadY = Math.max(...ys) - Math.min(...ys);
+    if (spreadX > REST_VARIANCE_THRESHOLD || spreadY > REST_VARIANCE_THRESHOLD) return;
+
+    const avgX = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const avgY = ys.reduce((a, b) => a + b, 0) / ys.length;
+    if (Math.hypot(avgX, avgY) > REST_MAGNITUDE_LIMIT) return;
+
+    this.offset = { x: avgX, y: avgY };
+    this.measured = true;
+  }
+
+  getOffset() {
+    return { x: this.offset.x, y: this.offset.y, magnitude: Math.hypot(this.offset.x, this.offset.y), measured: this.measured };
+  }
+
+  reset() {
+    this.samples = [];
+    this.offset = { x: 0, y: 0 };
+    this.measured = false;
+  }
+}

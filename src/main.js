@@ -1,7 +1,15 @@
 import "./style.css";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { applyDeadzone, detectControllerType, getConnectedGamepads, getLabelsFor, CHATTER_THRESHOLD_MS } from "./gamepad.js";
+import {
+  applyDeadzone,
+  detectControllerType,
+  getConnectedGamepads,
+  getLabelsFor,
+  CHATTER_THRESHOLD_MS,
+  NeutralDriftTracker,
+  NEUTRAL_DRIFT_WARN_THRESHOLD,
+} from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
 import { MashSequenceTest, gradeForChatter, buildMashVerdict } from "./mashTest.js";
@@ -50,10 +58,11 @@ app.innerHTML = `
             Ajusté: <b class="mono" id="leftAdj">0.00, 0.00</b>
           </div>
           <div style="display:flex; gap:8px; margin-top:10px">
-            <button id="leftCalibBtn">Démarrer calibration de range</button>
+            <button id="leftCalibBtn">Tester l'amplitude du stick</button>
             <button id="leftCalibReset" class="danger">Réinitialiser</button>
           </div>
           <p class="note" id="leftCalibResult"></p>
+          <p class="note" id="leftNeutralResult" title="Point de repos réel du stick, mesuré automatiquement quand il reste stable sans intervention. Un écart par rapport à (0,0) peut indiquer un drift naissant.">Point neutre: mesure en cours...</p>
         </div>
       </div>
     </section>
@@ -72,10 +81,11 @@ app.innerHTML = `
             Ajusté: <b class="mono" id="rightAdj">0.00, 0.00</b>
           </div>
           <div style="display:flex; gap:8px; margin-top:10px">
-            <button id="rightCalibBtn">Démarrer calibration de range</button>
+            <button id="rightCalibBtn">Tester l'amplitude du stick</button>
             <button id="rightCalibReset" class="danger">Réinitialiser</button>
           </div>
           <p class="note" id="rightCalibResult"></p>
+          <p class="note" id="rightNeutralResult" title="Point de repos réel du stick, mesuré automatiquement quand il reste stable sans intervention. Un écart par rapport à (0,0) peut indiquer un drift naissant.">Point neutre: mesure en cours...</p>
         </div>
       </div>
     </section>
@@ -542,7 +552,7 @@ function setupCalibration(side, buttonId, resultId, resetId) {
       resultEl.textContent = "Calibration en cours, faites le tour complet du stick...";
     } else {
       state.active = false;
-      btn.textContent = "Démarrer calibration de range";
+      btn.textContent = "Tester l'amplitude du stick";
       if (state.points.length < 5) {
         resultEl.textContent = "Pas assez de données, réessayez.";
         return;
@@ -555,12 +565,41 @@ function setupCalibration(side, buttonId, resultId, resetId) {
   resetBtn.addEventListener("click", () => {
     state.active = false;
     state.points = [];
-    btn.textContent = "Démarrer calibration de range";
+    btn.textContent = "Tester l'amplitude du stick";
     resultEl.textContent = "";
   });
 }
 setupCalibration("left", "leftCalibBtn", "leftCalibResult", "leftCalibReset");
 setupCalibration("right", "rightCalibBtn", "rightCalibResult", "rightCalibReset");
+
+const neutralDrift = {
+  left: new NeutralDriftTracker(),
+  right: new NeutralDriftTracker(),
+};
+const neutralResultEls = {
+  left: document.getElementById("leftNeutralResult"),
+  right: document.getElementById("rightNeutralResult"),
+};
+
+function neutralDriftStatus(offset) {
+  if (!offset.measured) return { key: "na", label: "Point neutre: mesure en cours (relâchez le stick)..." };
+  if (offset.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD) {
+    return {
+      key: "fair",
+      label: `Point neutre décalé: ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)} (drift naissant possible)`,
+    };
+  }
+  return { key: "excellent", label: `Point neutre: ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)} (centré ✓)` };
+}
+
+function renderNeutralDrift(side) {
+  const offset = neutralDrift[side].getOffset();
+  const status = neutralDriftStatus(offset);
+  const el = neutralResultEls[side];
+  el.textContent = status.label;
+  el.className = `note mash-grade-${status.key}`;
+  return offset;
+}
 
 const mashOverlay = document.getElementById("mashOverlay");
 const mashSetupEl = document.getElementById("mashSetup");
@@ -848,6 +887,10 @@ function buildDiagnosticReport() {
       left: document.getElementById("leftCalibResult").textContent || null,
       right: document.getElementById("rightCalibResult").textContent || null,
     },
+    neutralDrift: {
+      left: neutralDrift.left.getOffset(),
+      right: neutralDrift.right.getOffset(),
+    },
     latency: {
       averageMs: currentAvgLatencyMs != null ? Number(currentAvgLatencyMs.toFixed(1)) : null,
       sampleCount: latencySamples.length,
@@ -892,6 +935,25 @@ function computeDiagnosticVerdict(report) {
     items.push({ status: "warn", title: "Sticks", text: `Asymétrie détectée sur le stick ${sides}, possible usure ou drift localisé, voir détail ci-dessous.` });
   } else {
     items.push({ status: "ok", title: "Sticks", text: "Aucune asymétrie détectée sur les sticks calibrés." });
+  }
+
+  const { left: leftNeutral, right: rightNeutral } = report.neutralDrift;
+  if (!leftNeutral.measured && !rightNeutral.measured) {
+    items.push({ status: "neutral", title: "Point neutre des sticks", text: "Pas encore mesuré, laissez les sticks au repos quelques secondes sans y toucher." });
+  } else {
+    const driftedSides = [
+      leftNeutral.measured && leftNeutral.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD ? "gauche" : null,
+      rightNeutral.measured && rightNeutral.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD ? "droit" : null,
+    ].filter(Boolean);
+    if (driftedSides.length === 0) {
+      items.push({ status: "ok", title: "Point neutre des sticks", text: "Aucun décalage notable du point de repos détecté." });
+    } else {
+      items.push({
+        status: "warn",
+        title: "Point neutre des sticks",
+        text: `Décalage du point de repos détecté sur le stick ${driftedSides.join(" et ")}, signe possible d'un drift naissant même si la calibration de range ne montre pas encore d'asymétrie.`,
+      });
+    }
   }
 
   if (report.latency.sampleCount < 5) {
@@ -1068,6 +1130,21 @@ function buildDiagnosticPdf(report) {
     doc.text(lines, PDF_MARGIN + 2, y + 5);
     y += lines.length * 5 + 8;
   }
+
+  y = pdfSectionHeader(doc, "Point neutre des sticks", y, PDF_MAGENTA);
+  doc.setFontSize(10);
+  doc.setTextColor(...PDF_DARK);
+  for (const [label, offset] of [
+    ["Gauche", report.neutralDrift.left],
+    ["Droit", report.neutralDrift.right],
+  ]) {
+    const text = offset.measured
+      ? `${label}: ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)}${offset.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD ? " (décalé, drift naissant possible)" : " (centré)"}`
+      : `${label}: pas encore mesuré.`;
+    doc.text(text, PDF_MARGIN + 2, y);
+    y += 5;
+  }
+  y += 5;
 
   y = pdfSectionHeader(doc, "Latence & Chatter", y, PDF_MAGENTA);
   doc.setFontSize(10);
@@ -1253,6 +1330,11 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
 
   document.getElementById("leftCalibReset").click();
   document.getElementById("rightCalibReset").click();
+
+  neutralDrift.left.reset();
+  neutralDrift.right.reset();
+  renderNeutralDrift("left");
+  renderNeutralDrift("right");
 });
 
 let lastFrameTime = performance.now();
@@ -1279,6 +1361,8 @@ function loop() {
       rebuildButtonGrid(getLabelsFor(pad.id));
       prevButtonStates = [];
       lastReleaseTimes = [];
+      neutralDrift.left.reset();
+      neutralDrift.right.reset();
     }
 
     const now = frameNow;
@@ -1314,6 +1398,11 @@ function loop() {
 
     if (calibration.left.active) calibration.left.points.push({ x: lx, y: ly });
     if (calibration.right.active) calibration.right.points.push({ x: rx, y: ry });
+
+    neutralDrift.left.update(lx, ly, now);
+    neutralDrift.right.update(rx, ry, now);
+    renderNeutralDrift("left");
+    renderNeutralDrift("right");
 
     drawStick(leftCtx, leftCanvas, lx, ly, leftAdj.x, leftAdj.y, leftInner, leftOuter, calibration.left.points);
     drawStick(rightCtx, rightCanvas, rx, ry, rightAdj.x, rightAdj.y, rightInner, rightOuter, calibration.right.points);
