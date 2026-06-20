@@ -261,6 +261,50 @@ canvas.stick {
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent-alt) 60%, transparent);
 }
 
+.silhouette-frame {
+  position: relative;
+  width: min(100%, 380px);
+  margin: 0 auto 18px;
+}
+
+.silhouette-frame.hidden {
+  display: none;
+}
+
+.silhouette-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 12px;
+}
+
+.silhouette-dots {
+  position: absolute;
+  inset: 0;
+}
+
+.silhouette-dot,
+.silhouette-stick {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 80%, transparent);
+  opacity: 0;
+  transition: opacity 0.08s ease;
+  pointer-events: none;
+}
+
+.silhouette-stick {
+  background: var(--accent-alt);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent-alt) 50%, transparent);
+  opacity: 0.85;
+}
+
+.silhouette-stick.active {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent-alt) 90%, transparent);
+}
+
 .trigger-row {
   margin-bottom: 14px;
 }

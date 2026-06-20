@@ -13,6 +13,7 @@ import {
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
 import { MashSequenceTest, gradeForChatter, buildMashVerdict } from "./mashTest.js";
+import { createSilhouette, setSilhouetteType, updateSilhouette } from "./controllerSilhouette.js";
 
 const app = document.getElementById("app");
 
@@ -117,6 +118,7 @@ app.innerHTML = `
 
     <section class="panel">
       <h2>Boutons <span class="note" style="display:inline">(latence moyenne: <span id="avgLatency" class="value mono" style="color:var(--accent)">n/a</span>, chatter détecté: <span id="chatterCount" class="value mono" style="color:var(--accent-alt)">0</span>)</span></h2>
+      <div id="silhouetteContainer"></div>
       <div class="buttons-grid" id="buttonsGrid"></div>
       <p class="note" title="Chatter: un bouton se déclenche plusieurs fois pour une seule pression physique, souvent dû à l'usure d'un switch/contact.">Le chatter est détecté quand un bouton se relâche puis se ré-enfonce en moins de 60 ms, trop rapide pour une vraie double-pression humaine.</p>
     </section>
@@ -267,6 +269,9 @@ syncSliderLabels();
 const buttonsGrid = document.getElementById("buttonsGrid");
 let buttonCells = [];
 let currentLabels = [];
+
+const silhouette = createSilhouette(document.getElementById("silhouetteContainer"));
+let currentSilhouetteType = null;
 
 function rebuildButtonGrid(labels) {
   currentLabels = labels;
@@ -1363,6 +1368,11 @@ function loop() {
       lastReleaseTimes = [];
       neutralDrift.left.reset();
       neutralDrift.right.reset();
+      const controllerType = detectControllerType(pad.id);
+      if (controllerType !== currentSilhouetteType) {
+        currentSilhouetteType = controllerType;
+        setSilhouetteType(silhouette, controllerType);
+      }
     }
 
     const now = frameNow;
@@ -1425,6 +1435,8 @@ function loop() {
     rtBar.style.width = `${rt * 100}%`;
     ltVal.textContent = `${Math.round(lt * 100)}%`;
     rtVal.textContent = `${Math.round(rt * 100)}%`;
+
+    updateSilhouette(silhouette, pad);
 
     pad.buttons.forEach((btn, i) => {
       const cell = buttonCells[i];
