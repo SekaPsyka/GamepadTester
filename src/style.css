@@ -480,6 +480,39 @@ select option {
   margin: 16px 0;
 }
 
+.mash-optimal-conditions {
+  text-align: left;
+  background: color-mix(in srgb, var(--accent) 8%, #060710);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--panel-border));
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 14px;
+}
+
+.mash-optimal-conditions h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+
+.mash-optimal-conditions ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.mash-optimal-conditions li + li {
+  margin-top: 6px;
+}
+
+.mash-optimal-conditions strong {
+  color: var(--accent-alt);
+}
+
 .mash-actions {
   display: flex;
   justify-content: center;

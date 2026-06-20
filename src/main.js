@@ -23,7 +23,7 @@ app.innerHTML = `
         <label class="field">Manette<select id="padSelect"><option value="">Aucune manette</option></select></label>
       </div>
       <div class="header-actions">
-        <button id="openMashTestBtn" class="btn-highlight" title="Teste chaque bouton un par un: appuyez le plus de fois possible pendant la durée choisie pour détecter chatter, doubles-déclenchements et boutons lents">Diagnostic des boutons</button>
+        <button id="openMashTestBtn" class="btn-highlight" title="Teste chaque bouton un par un: appuyez à un rythme rapide et régulier pendant la durée choisie pour détecter chatter, doubles-déclenchements et boutons lents">Diagnostic des boutons</button>
         <button id="exportReportBtn" title="Exporte un rapport de diagnostic en PDF avec l'état actuel de la manette">Exporter rapport (PDF)</button>
         <button id="resetDataBtn" class="danger" title="Réinitialise la latence, le chatter, les calibrations, le drift, l'historique et les captures filaire/sans-fil">Réinitialiser les données</button>
       </div>
@@ -143,7 +143,16 @@ app.innerHTML = `
     <div class="mash-panel">
       <div id="mashSetup">
         <h2>Diagnostic des boutons (mashing)</h2>
-        <p class="note">Le test passe en revue chaque bouton détecté du mapping actuel. Pour chacun, appuyez le plus de fois possible pendant la durée choisie, le chrono démarre à votre premier appui. Permet de repérer le chatter, les doubles-déclenchements fantômes et les boutons lents à revenir en position.</p>
+        <p class="note">Le test passe en revue chaque bouton détecté du mapping actuel. Pour chacun, appuyez de façon répétée pendant la durée choisie, le chrono démarre à votre premier appui. Permet de repérer le chatter, les doubles-déclenchements fantômes et les boutons lents à revenir en position.</p>
+        <div class="mash-optimal-conditions">
+          <h3>Pour un résultat fiable</h3>
+          <ul>
+            <li>Appuyez à un rythme <strong>rapide mais net et régulier</strong>, en relâchant bien chaque bouton entre deux appuis, plutôt que de mashing brut au maximum de vitesse.</li>
+            <li>Batterie/piles pleines, ou manette branchée en filaire.</li>
+            <li>Privilégiez une connexion filaire ; en sans-fil, restez proche du récepteur.</li>
+            <li>Fermez les autres applications ou onglets qui pourraient utiliser la manette en même temps.</li>
+          </ul>
+        </div>
         <p class="note" id="mashSetupWarning"></p>
         <label class="field">Durée par bouton
           <select id="mashDuration">
