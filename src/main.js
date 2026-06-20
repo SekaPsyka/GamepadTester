@@ -18,7 +18,6 @@ app.innerHTML = `
     </div>
     <div class="header-row">
       <div class="header-controls">
-        <div class="status-pill" title="Mesure plafonnée par le navigateur (~60Hz sur Chrome, ~20Hz sur Firefox), pas la fréquence USB réelle de la manette.">Polling: <span class="value mono" id="pollRate">0</span> Hz</div>
         <label class="field">Thème<select id="themeSelect"></select></label>
         <label class="field">Manette<select id="padSelect"><option value="">Aucune manette</option></select></label>
       </div>
@@ -190,7 +189,6 @@ app.innerHTML = `
 
 const dot = document.getElementById("dot");
 const padName = document.getElementById("padName");
-const pollRateEl = document.getElementById("pollRate");
 const emptyState = document.getElementById("emptyState");
 const grid = document.getElementById("grid");
 
@@ -702,7 +700,7 @@ function renderCompareSnapshot(mode) {
     el.textContent = "Aucune capture.";
     return;
   }
-  el.textContent = `${snap.padId} (latence moy.: ${snap.avgLatencyMs.toFixed(1)} ms, ${snap.sampleCount} échantillons, ${snap.pollRateHz} Hz, capturé à ${snap.capturedAt})`;
+  el.textContent = `${snap.padId} (latence moy.: ${snap.avgLatencyMs.toFixed(1)} ms, ${snap.sampleCount} échantillons, capturé à ${snap.capturedAt})`;
 }
 
 function renderCompareDelta() {
@@ -730,7 +728,6 @@ function captureCompareSnapshot(mode) {
     padId: pad.id,
     avgLatencyMs: currentAvgLatencyMs,
     sampleCount: latencySamples.length,
-    pollRateHz,
     capturedAt: new Date().toLocaleTimeString(),
   };
   renderCompareSnapshot(mode);
@@ -756,7 +753,6 @@ function buildDiagnosticReport() {
     gamepad: pad
       ? { id: pad.id, index: pad.index, mappingType: detectControllerType(pad.id), buttonCount: pad.buttons.length, axisCount: pad.axes.length }
       : null,
-    pollRateHz,
     deadzones: {
       left: { inner: Number(sliders.left.inner.value), outer: Number(sliders.left.outer.value) },
       right: { inner: Number(sliders.right.inner.value), outer: Number(sliders.right.outer.value) },
@@ -949,8 +945,6 @@ function buildDiagnosticPdf(report) {
       PDF_MARGIN + 2,
       y
     );
-    y += 5;
-    doc.text(`Fréquence de polling mesurée: ${report.pollRateHz} Hz`, PDF_MARGIN + 2, y);
     y += 10;
   } else {
     doc.text("Aucune manette connectée au moment de l'export.", PDF_MARGIN + 2, y);
@@ -1083,21 +1077,20 @@ function buildDiagnosticPdf(report) {
     autoTable(doc, {
       startY: y,
       margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-      head: [["Mode", "Manette", "Latence moy.", "Échantillons", "Hz", "Capturé à"]],
+      head: [["Mode", "Manette", "Latence moy.", "Échantillons", "Capturé à"]],
       body: [
         wired
-          ? ["Filaire", wired.padId, `${wired.avgLatencyMs.toFixed(1)} ms`, String(wired.sampleCount), String(wired.pollRateHz), wired.capturedAt]
-          : ["Filaire", "n/a", "n/a", "n/a", "n/a", "n/a"],
+          ? ["Filaire", wired.padId, `${wired.avgLatencyMs.toFixed(1)} ms`, String(wired.sampleCount), wired.capturedAt]
+          : ["Filaire", "n/a", "n/a", "n/a", "n/a"],
         wireless
           ? [
               "Sans-fil",
               wireless.padId,
               `${wireless.avgLatencyMs.toFixed(1)} ms`,
               String(wireless.sampleCount),
-              String(wireless.pollRateHz),
               wireless.capturedAt,
             ]
-          : ["Sans-fil", "n/a", "n/a", "n/a", "n/a", "n/a"],
+          : ["Sans-fil", "n/a", "n/a", "n/a", "n/a"],
       ],
       theme: "grid",
       headStyles: { fillColor: PDF_CYAN, textColor: 255 },
@@ -1171,35 +1164,6 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
   document.getElementById("rightCalibReset").click();
 });
 
-// Mesurée via une boucle séparée du rAF (voir startPollRateMeter), pour ne pas
-// plafonner la lecture au taux de rafraîchissement de l'écran en plus du plafond
-// déjà imposé par le navigateur (~60Hz Chrome, ~20Hz Firefox).
-let pollRateHz = 0;
-
-function startPollRateMeter() {
-  let lastTimestamp = -1;
-  let pollCount = 0;
-  let lastPollSecond = performance.now();
-  const recentRates = [];
-
-  setInterval(() => {
-    const pad = getSelectedGamepad();
-    if (pad && pad.timestamp !== lastTimestamp) {
-      lastTimestamp = pad.timestamp;
-      pollCount++;
-    }
-    const now = performance.now();
-    if (now - lastPollSecond >= 1000) {
-      recentRates.push(pollCount);
-      if (recentRates.length > 3) recentRates.shift();
-      pollRateHz = Math.round(recentRates.reduce((a, b) => a + b, 0) / recentRates.length);
-      pollCount = 0;
-      lastPollSecond = now;
-    }
-  }, 2);
-}
-startPollRateMeter();
-
 let lastFrameTime = performance.now();
 
 function loop() {
@@ -1226,7 +1190,6 @@ function loop() {
       lastReleaseTimes = [];
     }
 
-    pollRateEl.textContent = pollRateHz;
     const now = frameNow;
     // pad.timestamp est l'horodatage natif du driver pour le dernier état lu, plus précis
     // que le temps de la frame rAF pour dater les transitions presse/relâche, car il ne
