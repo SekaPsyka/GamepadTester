@@ -151,6 +151,7 @@ app.innerHTML = `
             <li>Batterie/piles pleines, ou manette branchée en filaire.</li>
             <li>Privilégiez une connexion filaire ; en sans-fil, restez proche du récepteur.</li>
             <li>Fermez les autres applications ou onglets qui pourraient utiliser la manette en même temps.</li>
+            <li>Visez <strong>au moins 20 appuis</strong> par bouton sur la durée du test: en dessous, le résultat est jugé pas assez fiable pour conclure (affiché "N/A").</li>
           </ul>
         </div>
         <p class="note" id="mashSetupWarning"></p>
