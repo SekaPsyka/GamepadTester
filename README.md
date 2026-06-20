@@ -24,4 +24,5 @@ npm run dev
 
 Les illustrations de manette utilisées pour la silhouette visuelle proviennent du
 [Gamepad Asset Pack](https://github.com/AL2009man/Gamepad-Asset-Pack) par AL2009man (licence MIT).
-Voir [CREDITS.md](./CREDITS.md) pour le détail.
+Voir [CREDITS.md](./CREDITS.md) pour le détail et
+[THIRD_PARTY_NOTICES.txt](./public/THIRD_PARTY_NOTICES.txt) pour le texte complet de la licence.
