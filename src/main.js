@@ -91,9 +91,16 @@ app.innerHTML = `
         <div class="trigger-bar-bg"><div class="trigger-bar-fill" id="rtBar"></div></div>
       </div>
       <div class="vibration-controls">
-        <button id="vibWeak">Test rumble faible</button>
-        <button id="vibStrong">Test rumble fort</button>
+        <button id="vibWeak">Test moteur droit (haute fréq.)</button>
+        <button id="vibStrong">Test moteur gauche (basse fréq.)</button>
         <button id="vibStop" class="danger">Stop</button>
+      </div>
+      <p class="note">Les tests ci-dessus s'arrêtent automatiquement après 600 ms. Pour ressentir un moteur en continu, utilisez le curseur ci-dessous puis Stop pour l'arrêter manuellement.</p>
+      <div class="sliders" style="margin-top:10px">
+        <label>Moteur gauche (basse fréq.): <span class="mono" id="vibStrongLiveVal">0%</span></label>
+        <input type="range" id="vibStrongLive" min="0" max="1" step="0.01" value="0" />
+        <label>Moteur droit (haute fréq.): <span class="mono" id="vibWeakLiveVal">0%</span></label>
+        <input type="range" id="vibWeakLive" min="0" max="1" step="0.01" value="0" />
       </div>
       <p class="note" id="vibNote"></p>
     </section>
@@ -307,9 +314,9 @@ const ltVal = document.getElementById("ltVal");
 const rtVal = document.getElementById("rtVal");
 
 const vibNote = document.getElementById("vibNote");
-document.getElementById("vibWeak").addEventListener("click", () => playRumble(0.3, 0.0));
+document.getElementById("vibWeak").addEventListener("click", () => playRumble(1.0, 0.0));
 document.getElementById("vibStrong").addEventListener("click", () => playRumble(0.0, 1.0));
-document.getElementById("vibStop").addEventListener("click", () => playRumble(0, 0, 1));
+document.getElementById("vibStop").addEventListener("click", () => stopLiveRumble());
 
 function playRumble(weak, strong, duration = 600) {
   const pad = getSelectedGamepad();
@@ -328,6 +335,42 @@ function playRumble(weak, strong, duration = 600) {
     .then(() => (vibNote.textContent = ""))
     .catch(() => (vibNote.textContent = "Effet de vibration refusé."));
 }
+
+const vibStrongLive = document.getElementById("vibStrongLive");
+const vibWeakLive = document.getElementById("vibWeakLive");
+const vibStrongLiveVal = document.getElementById("vibStrongLiveVal");
+const vibWeakLiveVal = document.getElementById("vibWeakLiveVal");
+let liveRumbleTimer = null;
+
+function stopLiveRumble() {
+  clearInterval(liveRumbleTimer);
+  liveRumbleTimer = null;
+  vibStrongLive.value = 0;
+  vibWeakLive.value = 0;
+  vibStrongLiveVal.textContent = "0%";
+  vibWeakLiveVal.textContent = "0%";
+  playRumble(0, 0, 1);
+}
+
+function syncLiveRumble() {
+  const weak = Number(vibWeakLive.value);
+  const strong = Number(vibStrongLive.value);
+  vibWeakLiveVal.textContent = `${Math.round(weak * 100)}%`;
+  vibStrongLiveVal.textContent = `${Math.round(strong * 100)}%`;
+
+  clearInterval(liveRumbleTimer);
+  liveRumbleTimer = null;
+  if (weak === 0 && strong === 0) return;
+
+  // playEffect ne propose pas de mode infini : on rejoue l'effet en boucle
+  // pour simuler une vibration continue tant qu'un curseur est actif.
+  const refresh = () => playRumble(weak, strong, 300);
+  refresh();
+  liveRumbleTimer = setInterval(refresh, 250);
+}
+
+vibStrongLive.addEventListener("input", syncLiveRumble);
+vibWeakLive.addEventListener("input", syncLiveRumble);
 
 function themeColor(varName) {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
