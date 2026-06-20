@@ -108,7 +108,7 @@ export class MashSequenceTest {
 // Un peu de chatter est normal: tout switch mécanique rebondit légèrement à la fermeture
 // (typiquement 5-20ms, déjà filtré par notre seuil de détection à 60ms). Ce qui distingue
 // un bruit ponctuel d'un vrai défaut, c'est le TAUX de chatter par rapport au nombre
-// d'appuis, pas un compte brut — 1 événement sur 200 appuis n'a rien à voir avec 1 sur 10.
+// d'appuis, pas un compte brut : 1 événement sur 200 appuis n'a rien à voir avec 1 sur 10.
 export const RELIABILITY_GRADES = {
   excellent: { key: "excellent", label: "Excellent" },
   good: { key: "good", label: "Bon" },
@@ -117,7 +117,7 @@ export const RELIABILITY_GRADES = {
   na: { key: "na", label: "N/A" },
 };
 
-// À 5 appuis, 1 seul chatter (20% de taux) suffisait à classer un bouton "Mauvais" —
+// À 5 appuis, 1 seul chatter (20% de taux) suffisait à classer un bouton "Mauvais",
 // un accident de mesure isolé pesait alors autant qu'un vrai défaut. 20 appuis reste
 // largement atteignable même sur la durée de test la plus courte (5s) avec un mashing
 // normal, tout en rendant un chatter isolé statistiquement moins déterminant.
@@ -146,7 +146,7 @@ export function gradeForChatter(chatterCount, pressCount) {
 export function buildMashVerdict(results) {
   const graded = results.filter((r) => gradeForChatter(r.chatterCount, r.pressCount).key !== "na");
   if (graded.length === 0) {
-    return { tone: "neutral", text: "Pas assez d'appuis enregistrés pour conclure sur la fiabilité des boutons — reteste avec un mashing plus soutenu." };
+    return { tone: "neutral", text: "Pas assez d'appuis enregistrés pour conclure sur la fiabilité des boutons, retestez avec un mashing plus soutenu." };
   }
 
   const problematic = graded.filter((r) => {
@@ -162,7 +162,7 @@ export function buildMashVerdict(results) {
   if (ratio >= 0.7) {
     return {
       tone: "bad",
-      text: `Chatter détecté sur la quasi-totalité des boutons testés (${problematic.length}/${graded.length}) — ce profil est plutôt caractéristique d'un problème matériel (switch, carte, connexion) que de faux positifs isolés.`,
+      text: `Chatter détecté sur la quasi-totalité des boutons testés (${problematic.length}/${graded.length}), ce profil est plutôt caractéristique d'un problème matériel (switch, carte, connexion) que de faux positifs isolés.`,
     };
   }
 
@@ -170,12 +170,12 @@ export function buildMashVerdict(results) {
   if (problematic.length <= 2) {
     return {
       tone: "warn",
-      text: `Résultat globalement bon. Seul(s) ${labels} montre(nt) un taux de chatter élevé — ça peut venir d'un contact qui s'use, mais aussi d'un faux contact ponctuel. Reteste ce(s) bouton(s) avant de conclure à un défaut matériel.`,
+      text: `Résultat globalement bon. Seul(s) ${labels} montre(nt) un taux de chatter élevé, ça peut venir d'un contact qui s'use, mais aussi d'un faux contact ponctuel. Retestez ce(s) bouton(s) avant de conclure à un défaut matériel.`,
     };
   }
 
   return {
     tone: "warn",
-    text: `Plusieurs boutons (${problematic.length}/${graded.length}) montrent un taux de chatter inhabituel: ${labels}. Si ça touche des boutons sans rapport mécanique entre eux, vérifie d'abord le navigateur, le pilote ou la connexion (filaire/sans-fil) avant de soupçonner un défaut matériel.`,
+    text: `Plusieurs boutons (${problematic.length}/${graded.length}) montrent un taux de chatter inhabituel: ${labels}. Si ça touche des boutons sans rapport mécanique entre eux, vérifiez d'abord le navigateur, le pilote ou la connexion (filaire/sans-fil) avant de soupçonner un défaut matériel.`,
   };
 }
