@@ -121,7 +121,7 @@ app.innerHTML = `
 
     <section class="panel span-2">
       <h2>Comparaison filaire / sans-fil</h2>
-      <p class="note" style="margin:0 0 10px">Branchez la manette dans un mode, laissez-la inactive quelques secondes puis appuyez sur quelques boutons pour accumuler des échantillons, puis capturez. Changez de mode (câble/Bluetooth) et capturez à nouveau pour comparer.</p>
+      <p class="note" style="margin:0 0 10px">Branchez la manette dans un mode, cliquez sur "Capturer", puis appuyez rapidement sur plusieurs boutons pendant les 5 secondes du compte à rebours (au moins 8 appuis). Changez ensuite de mode (câble/Bluetooth) et recapturez pour comparer.</p>
       <div class="compare-row">
         <div class="compare-col">
           <h3>Filaire</h3>
@@ -683,15 +683,27 @@ function logPress(label, latencyMs) {
     if (latencySamples.length > 30) latencySamples.shift();
     currentAvgLatencyMs = latencySamples.reduce((a, b) => a + b, 0) / latencySamples.length;
     avgLatencyEl.textContent = `${currentAvgLatencyMs.toFixed(1)} ms`;
+
+    if (compareCapture && latencyMs >= 0 && latencyMs < 500) {
+      compareCapture.samples.push(latencyMs);
+    }
   }
 }
+
+const COMPARE_CAPTURE_DURATION_MS = 5000;
+const COMPARE_MIN_SAMPLES = 8;
 
 const compareSnapshots = { wired: null, wireless: null };
 const compareElByMode = {
   wired: document.getElementById("wiredSnapshot"),
   wireless: document.getElementById("wirelessSnapshot"),
 };
+const compareButtonByMode = {
+  wired: document.getElementById("captureWired"),
+  wireless: document.getElementById("captureWireless"),
+};
 const compareDeltaEl = document.getElementById("compareDelta");
+let compareCapture = null; // { mode, padId, samples: [], endAt }
 
 function renderCompareSnapshot(mode) {
   const snap = compareSnapshots[mode];
@@ -714,24 +726,56 @@ function renderCompareDelta() {
   compareDeltaEl.textContent = `Écart sans-fil vs filaire: ${sign}${delta.toFixed(1)} ms${delta > 0 ? " (sans-fil plus lent)" : delta < 0 ? " (sans-fil plus rapide, vérifiez vos captures)" : " (aucune différence)"}`;
 }
 
+function setCompareButtonsDisabled(disabled) {
+  compareButtonByMode.wired.disabled = disabled;
+  compareButtonByMode.wireless.disabled = disabled;
+}
+
+function tickCompareCapture() {
+  if (!compareCapture) return;
+  const remainingMs = compareCapture.endAt - performance.now();
+  if (remainingMs <= 0) {
+    finishCompareCapture();
+    return;
+  }
+  const el = compareElByMode[compareCapture.mode];
+  const seconds = Math.ceil(remainingMs / 1000);
+  const count = compareCapture.samples.length;
+  el.textContent = `Appuyez sur des boutons... ${seconds}s restantes (${count} échantillon${count === 1 ? "" : "s"})`;
+  requestAnimationFrame(tickCompareCapture);
+}
+
+function finishCompareCapture() {
+  const { mode, padId, samples } = compareCapture;
+  compareCapture = null;
+  setCompareButtonsDisabled(false);
+  compareButtonByMode[mode].textContent = "Capturer la session actuelle";
+
+  if (samples.length < COMPARE_MIN_SAMPLES) {
+    compareElByMode[mode].textContent = `Pas assez d'échantillons (${samples.length}/${COMPARE_MIN_SAMPLES}), appuyez plus souvent sur des boutons puis recommencez.`;
+    return;
+  }
+  compareSnapshots[mode] = {
+    padId,
+    avgLatencyMs: samples.reduce((a, b) => a + b, 0) / samples.length,
+    sampleCount: samples.length,
+    capturedAt: new Date().toLocaleTimeString(),
+  };
+  renderCompareSnapshot(mode);
+  renderCompareDelta();
+}
+
 function captureCompareSnapshot(mode) {
+  if (compareCapture) return;
   const pad = getSelectedGamepad();
   if (!pad) {
     compareElByMode[mode].textContent = "Aucune manette connectée.";
     return;
   }
-  if (currentAvgLatencyMs == null || latencySamples.length < 5) {
-    compareElByMode[mode].textContent = "Pas assez d'échantillons, appuyez sur quelques boutons avant de capturer.";
-    return;
-  }
-  compareSnapshots[mode] = {
-    padId: pad.id,
-    avgLatencyMs: currentAvgLatencyMs,
-    sampleCount: latencySamples.length,
-    capturedAt: new Date().toLocaleTimeString(),
-  };
-  renderCompareSnapshot(mode);
-  renderCompareDelta();
+  compareCapture = { mode, padId: pad.id, samples: [], endAt: performance.now() + COMPARE_CAPTURE_DURATION_MS };
+  setCompareButtonsDisabled(true);
+  compareButtonByMode[mode].textContent = "Capture en cours...";
+  tickCompareCapture();
 }
 
 document.getElementById("captureWired").addEventListener("click", () => captureCompareSnapshot("wired"));
@@ -1151,6 +1195,10 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
 
   pressLog.innerHTML = "";
 
+  compareCapture = null;
+  setCompareButtonsDisabled(false);
+  compareButtonByMode.wired.textContent = "Capturer la session actuelle";
+  compareButtonByMode.wireless.textContent = "Capturer la session actuelle";
   compareSnapshots.wired = null;
   compareSnapshots.wireless = null;
   renderCompareSnapshot("wired");
