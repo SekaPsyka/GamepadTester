@@ -91,6 +91,15 @@ app.innerHTML = `
       </div>
     </section>
 
+    <section class="panel span-2">
+      <h2>Stabilité des sticks (axe X, détection de drift)</h2>
+      <p class="note" style="margin:0 0 6px">Gauche</p>
+      <canvas class="graph" id="driftGraphLeft" width="1200" height="70"></canvas>
+      <p class="note" style="margin:14px 0 6px">Droit</p>
+      <canvas class="graph" id="driftGraphRight" width="1200" height="70"></canvas>
+      <p class="note">Au repos, ces lignes doivent rester plates au centre. Des oscillations indiquent du stick drift.</p>
+    </section>
+
     <section class="panel panel--trigger-vibration">
       <h2>Gâchettes &amp; vibration</h2>
       <div class="trigger-gauges">
@@ -151,15 +160,6 @@ app.innerHTML = `
       <div id="silhouetteContainer"></div>
       <div class="buttons-grid" id="buttonsGrid"></div>
       <p class="note" title="Chatter: un bouton se déclenche plusieurs fois pour une seule pression physique, souvent dû à l'usure d'un switch/contact.">Le chatter est détecté quand un bouton se relâche puis se ré-enfonce en moins de 60 ms, trop rapide pour une vraie double-pression humaine.</p>
-    </section>
-
-    <section class="panel span-2">
-      <h2>Stabilité des sticks (axe X, détection de drift)</h2>
-      <p class="note" style="margin:0 0 6px">Gauche</p>
-      <canvas class="graph" id="driftGraphLeft" width="1200" height="70"></canvas>
-      <p class="note" style="margin:14px 0 6px">Droit</p>
-      <canvas class="graph" id="driftGraphRight" width="1200" height="70"></canvas>
-      <p class="note">Au repos, ces lignes doivent rester plates au centre. Des oscillations indiquent du stick drift.</p>
     </section>
 
     <section class="panel span-2">
