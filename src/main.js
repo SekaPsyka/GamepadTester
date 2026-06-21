@@ -212,6 +212,11 @@ app.innerHTML = `
     </section>
   </div>
 
+  <footer class="app-footer">
+    Fait par <a href="https://github.com/SekaPsyka" target="_blank" rel="noopener noreferrer">SekaPsyka</a> ·
+    <a href="https://github.com/SekaPsyka/GamepadTester" target="_blank" rel="noopener noreferrer">Code source sur GitHub</a>
+  </footer>
+
   <div class="mash-overlay" id="mashOverlay">
     <div class="mash-panel">
       <div id="mashSetup">
