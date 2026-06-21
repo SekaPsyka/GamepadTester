@@ -133,7 +133,7 @@ export class NeutralDriftTracker {
 const TRIGGER_ENGAGED_MIN = 0.15;
 // Durée à tenir avant de valider la mesure: assez longue pour moyenner le bruit sur
 // plusieurs échantillons, assez courte pour rester confortable à tenir à la main.
-export const TRIGGER_REQUIRED_HOLD_MS = 2000;
+export const TRIGGER_REQUIRED_HOLD_MS = 5000;
 // Un mouvement volontaire (l'utilisateur presse ou relâche progressivement, ou est en
 // train de positionner son doigt) ferait varier la valeur sur toute la tentative sans
 // que ce soit un défaut de capteur. On ne valide la tentative que si la position n'a
@@ -200,6 +200,13 @@ export class TriggerStabilityTracker {
     if (this.locked) return 1;
     if (this.holdStartedAt == null) return 0;
     return Math.min(1, (now - this.holdStartedAt) / TRIGGER_REQUIRED_HOLD_MS);
+  }
+
+  // Une tentative est en cours (gâchette tenue, pas encore validée) — y compris quand un
+  // résultat précédent est déjà affiché, pour distinguer "nouvelle mesure en cours" de
+  // "résultat de la dernière mesure".
+  isAttempting() {
+    return this.holdStartedAt != null && !this.locked;
   }
 
   getResult() {

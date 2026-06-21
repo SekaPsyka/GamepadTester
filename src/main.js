@@ -799,14 +799,19 @@ function renderTriggerStability(side, now) {
   const tracker = triggerStability[side];
   const result = tracker.getResult();
   const el = triggerStabilityResultEls[side];
+
+  // Une nouvelle tentative en cours doit être visible même si un résultat précédent est
+  // déjà affiché, sinon on ne voit jamais qu'un nouveau test a démarré après relâchement.
+  if (tracker.isAttempting()) {
+    const remainingS = ((1 - tracker.getProgress(now)) * TRIGGER_REQUIRED_HOLD_MS) / 1000;
+    el.textContent = result.measured
+      ? `Stabilité: nouvelle mesure en cours, maintenez encore ${remainingS.toFixed(1)}s...`
+      : `Stabilité: maintenez encore ${remainingS.toFixed(1)}s...`;
+    el.className = "note mash-grade-na";
+    return result;
+  }
   if (!result.measured) {
-    const progress = tracker.getProgress(now);
-    if (progress > 0) {
-      const remainingS = ((1 - progress) * TRIGGER_REQUIRED_HOLD_MS) / 1000;
-      el.textContent = `Stabilité: maintenez encore ${remainingS.toFixed(1)}s...`;
-    } else {
-      el.textContent = "Stabilité: maintenez à mi-course pour mesurer...";
-    }
+    el.textContent = "Stabilité: maintenez à mi-course pour mesurer...";
     el.className = "note mash-grade-na";
     return result;
   }
