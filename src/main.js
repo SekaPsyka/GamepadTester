@@ -12,9 +12,8 @@ import {
   NEUTRAL_DRIFT_BAD_THRESHOLD,
   isButtonPressed,
   TriggerStabilityTracker,
-  TRIGGER_STABILITY_WARN_RANGE,
-  TRIGGER_STABILITY_BAD_RANGE,
   TRIGGER_REQUIRED_HOLD_MS,
+  triggerStabilityGrade,
 } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
@@ -786,11 +785,15 @@ const triggerStabilityResultEls = {
 
 function triggerStabilityStatus(result) {
   if (!result.measured) return { key: "na", label: "Stabilité: maintenez à mi-course pour mesurer..." };
-  if (result.range > TRIGGER_STABILITY_BAD_RANGE) {
-    return { key: "poor", label: `Stabilité: instable (écart ${(result.range * 100).toFixed(1)}%, ${result.stepCount} saut(s))` };
+  const grade = triggerStabilityGrade(result);
+  const detail = `écart ${(result.range * 100).toFixed(1)}%, ${result.stepCount} saut(s)`;
+  if (grade.key === "poor") {
+    return { key: "poor", label: `Stabilité: instable (${detail})` };
   }
-  if (result.range > TRIGGER_STABILITY_WARN_RANGE) {
-    return { key: "fair", label: `Stabilité: léger bruit (écart ${(result.range * 100).toFixed(1)}%, ${result.stepCount} saut(s))` };
+  if (grade.key === "fair") {
+    return grade.isolated
+      ? { key: "fair", label: `Stabilité: écart isolé (${detail}), retestez pour confirmer` }
+      : { key: "fair", label: `Stabilité: léger bruit (${detail})` };
   }
   return { key: "excellent", label: `Stabilité: lisse (écart ${(result.range * 100).toFixed(1)}%) ✓` };
 }
@@ -1363,26 +1366,32 @@ function computeDiagnosticVerdict(report) {
   if (!ltStability.measured && !rtStability.measured) {
     items.push({ status: "neutral", title: "Gâchettes", text: "Stabilité pas encore mesurée, maintenez chaque gâchette à mi-course quelques secondes." });
   } else {
+    const ltGrade = triggerStabilityGrade(ltStability);
+    const rtGrade = triggerStabilityGrade(rtStability);
     const unstableSides = [
-      ltStability.measured && ltStability.range > TRIGGER_STABILITY_WARN_RANGE ? "LT" : null,
-      rtStability.measured && rtStability.range > TRIGGER_STABILITY_WARN_RANGE ? "RT" : null,
+      ltGrade.key !== "na" && ltGrade.key !== "excellent" ? "LT" : null,
+      rtGrade.key !== "na" && rtGrade.key !== "excellent" ? "RT" : null,
     ].filter(Boolean);
     if (unstableSides.length === 0) {
       items.push({ status: "ok", title: "Gâchettes", text: "Signal lisse sur les gâchettes tenues à un palier fixe, aucun signe d'usure du capteur." });
     } else {
+      const worstGrade = [ltGrade, rtGrade].some((g) => g.key === "poor") ? "poor" : "fair";
+      const anyIsolated = (ltGrade.isolated || rtGrade.isolated) && worstGrade !== "poor";
       const worstRange = Math.max(
         ltStability.measured ? ltStability.range : 0,
         rtStability.measured ? rtStability.range : 0
       );
-      const status = worstRange > TRIGGER_STABILITY_BAD_RANGE ? "bad" : "warn";
+      const status = worstGrade === "poor" ? "bad" : "warn";
       const rangePercent = Math.round(worstRange * 100);
       items.push({
         status,
         title: "Gâchettes",
         text:
-          status === "bad"
-            ? `Signal instable détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu): ce niveau dépasse largement un simple tremblement de doigt, signe probable d'un capteur/potentiomètre qui décroche.`
-            : `Léger bruit détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu), à surveiller mais pas encore franchement anormal.`,
+          worstGrade === "poor"
+            ? `Signal instable détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, sauts répétés): ce niveau dépasse largement un simple tremblement de doigt, signe probable d'un capteur/potentiomètre qui décroche.`
+            : anyIsolated
+              ? `Écart isolé détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, saut unique): probablement un accident de mesure ponctuel plutôt qu'un vrai défaut, retestez pour confirmer.`
+              : `Léger bruit détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu), à surveiller mais pas encore franchement anormal.`,
       });
     }
   }
@@ -1742,15 +1751,16 @@ function buildDiagnosticPdf(report) {
     cy += 5;
 
     const result = report.triggerStability[side.key];
-    const unstable = result.measured && result.range > TRIGGER_STABILITY_WARN_RANGE;
-    const bad = result.measured && result.range > TRIGGER_STABILITY_BAD_RANGE;
+    const grade = triggerStabilityGrade(result);
+    const qualifier =
+      grade.key === "poor" ? "(instable)" : grade.key === "fair" ? (grade.isolated ? "(écart isolé, à confirmer)" : "(léger bruit)") : "(lisse)";
     const stabilityText = result.measured
-      ? `Écart à palier tenu: ${(result.range * 100).toFixed(1)}% (${result.stepCount} saut(s)) ${unstable ? "(instable)" : "(lisse)"}`
+      ? `Écart à palier tenu: ${(result.range * 100).toFixed(1)}% (${result.stepCount} saut(s)) ${qualifier}`
       : "Pas encore mesuré (maintenez à mi-course).";
     const stabilityLines = doc.splitTextToSize(stabilityText, colWidth);
     doc.setFont("courier", "normal");
     doc.setFontSize(8);
-    doc.setTextColor(...(bad ? PDF_STATUS_COLORS.bad : unstable ? PDF_STATUS_COLORS.warn : PDF_MUTED));
+    doc.setTextColor(...(grade.key === "poor" ? PDF_STATUS_COLORS.bad : grade.key === "fair" ? PDF_STATUS_COLORS.warn : PDF_MUTED));
     doc.text(stabilityLines, side.x, cy);
     cy += stabilityLines.length * 4 + 2;
 

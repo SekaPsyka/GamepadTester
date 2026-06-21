@@ -145,8 +145,25 @@ const TRIGGER_STEP_DELTA = 0.02;
 // Le bruit résiduel d'un capteur de gâchette sain, doigt tenu stable, reste très fin.
 export const TRIGGER_STABILITY_WARN_RANGE = 0.02;
 // Au-delà, l'amplitude dépasse largement ce qu'un tremblement de doigt peut expliquer:
-// signe d'un potentiomètre/capteur qui décroche.
+// signe d'un potentiomètre/capteur qui décroche. Mais un tremblement involontaire produit
+// le même genre d'écart brut qu'un défaut de capteur: ce seuil seul ne suffit pas à
+// trancher, voir TRIGGER_ISOLATED_STEP_LIMIT ci-dessous.
 export const TRIGGER_STABILITY_BAD_RANGE = 0.05;
+// Un unique saut sur tout un maintien de TRIGGER_REQUIRED_HOLD_MS (un hoquet Bluetooth,
+// une frame ratée) ne dit rien sur l'état du capteur — c'est la répétition du saut qui
+// distingue un vrai motif (tremblement ou défaut) d'un accident de mesure isolé.
+const TRIGGER_ISOLATED_STEP_LIMIT = 1;
+
+// Centralise l'interprétation d'une mesure de stabilité de gâchette: un écart au-delà du
+// seuil "instable" causé par un saut isolé est requalifié en bruit "à confirmer" plutôt
+// que classé directement comme un défaut matériel.
+export function triggerStabilityGrade(result) {
+  if (!result.measured) return { key: "na", isolated: false };
+  if (result.range <= TRIGGER_STABILITY_WARN_RANGE) return { key: "excellent", isolated: false };
+  if (result.range <= TRIGGER_STABILITY_BAD_RANGE) return { key: "fair", isolated: false };
+  if (result.stepCount <= TRIGGER_ISOLATED_STEP_LIMIT) return { key: "fair", isolated: true };
+  return { key: "poor", isolated: false };
+}
 
 // Détecte si une gâchette analogique tenue à un palier fixe pendant TRIGGER_REQUIRED_HOLD_MS
 // produit un signal lisse ou "en escalier" (paliers irréguliers, signe d'un capteur usé).
