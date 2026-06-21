@@ -123,3 +123,79 @@ export class NeutralDriftTracker {
     this.measured = false;
   }
 }
+
+const TRIGGER_HOLD_WINDOW_MS = 700;
+// Mesurer la "stabilité" à 0 (repos) n'a pas de sens, ce n'est pas un signal analogique
+// engagé.
+const TRIGGER_ENGAGED_MIN = 0.15;
+// Un mouvement volontaire lent (l'utilisateur presse ou relâche progressivement) ferait
+// varier la valeur sur toute la fenêtre sans que ce soit un défaut de capteur. On ne
+// retient la fenêtre comme "tenue" que si la position n'a pas dérivé entre sa première
+// et sa seconde moitié, indépendamment du bruit instantané à l'intérieur de la fenêtre.
+const TRIGGER_HOLD_TOLERANCE = 0.04;
+// Un saut net (escalier) entre deux frames consécutives n'a rien à voir avec le bruit
+// continu d'un capteur sain.
+const TRIGGER_STEP_DELTA = 0.02;
+// Le bruit résiduel d'un capteur de gâchette sain, doigt tenu stable, reste très fin.
+export const TRIGGER_STABILITY_WARN_RANGE = 0.02;
+// Au-delà, l'amplitude dépasse largement ce qu'un tremblement de doigt peut expliquer:
+// signe d'un potentiomètre/capteur qui décroche.
+export const TRIGGER_STABILITY_BAD_RANGE = 0.05;
+
+// Détecte si une gâchette analogique tenue à un palier fixe produit un signal lisse ou
+// "en escalier" (paliers irréguliers, signe d'un capteur usé) — distingue ce bruit d'un
+// mouvement volontaire en comparant le début et la fin de la fenêtre d'échantillonnage.
+export class TriggerStabilityTracker {
+  constructor() {
+    this.samples = []; // { value, t }
+    this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
+  }
+
+  update(value, now) {
+    this.samples.push({ value, t: now });
+    // On ne purge le plus vieil échantillon que si le suivant couvre déjà la fenêtre à
+    // lui seul: avec un pas d'échantillonnage régulier, purger dès qu'on dépasse la
+    // fenêtre fait osciller l'âge du plus vieil échantillon juste sous le seuil pour
+    // toujours, sans jamais l'atteindre (effet de quantification).
+    while (this.samples.length > 1 && now - this.samples[1].t >= TRIGGER_HOLD_WINDOW_MS) {
+      this.samples.shift();
+    }
+    if (this.samples.length < 8 || now - this.samples[0].t < TRIGGER_HOLD_WINDOW_MS) {
+      this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
+      return;
+    }
+
+    const values = this.samples.map((s) => s.value);
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    if (avg < TRIGGER_ENGAGED_MIN) {
+      this.result = { measured: false, range: 0, stepCount: 0, level: avg };
+      return;
+    }
+
+    const mid = Math.floor(values.length / 2);
+    const firstHalfAvg = values.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+    const secondHalfValues = values.slice(mid);
+    const secondHalfAvg = secondHalfValues.reduce((a, b) => a + b, 0) / secondHalfValues.length;
+    if (Math.abs(secondHalfAvg - firstHalfAvg) > TRIGGER_HOLD_TOLERANCE) {
+      this.result = { measured: false, range: 0, stepCount: 0, level: avg };
+      return;
+    }
+
+    const range = Math.max(...values) - Math.min(...values);
+    let stepCount = 0;
+    for (let i = 1; i < values.length; i++) {
+      if (Math.abs(values[i] - values[i - 1]) > TRIGGER_STEP_DELTA) stepCount++;
+    }
+
+    this.result = { measured: true, range, stepCount, level: avg };
+  }
+
+  getResult() {
+    return { ...this.result };
+  }
+
+  reset() {
+    this.samples = [];
+    this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
+  }
+}
