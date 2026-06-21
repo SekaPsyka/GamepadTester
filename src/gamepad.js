@@ -50,6 +50,10 @@ const REST_MAGNITUDE_LIMIT = 0.3;
 // dead zone normale. On se cale juste sous cette borne pour capter un vrai début de
 // dérive sans signaler des manettes saines à cause d'un simple écart de calibration interne.
 export const NEUTRAL_DRIFT_WARN_THRESHOLD = 0.045;
+// Au-delà de 0.12, le décalage dépasse largement la dead zone par défaut (0.1 sur la
+// plupart des manettes) et devient un vrai input fantôme perceptible en jeu, plutôt
+// qu'un simple début de dérive masqué par la dead zone.
+export const NEUTRAL_DRIFT_BAD_THRESHOLD = 0.12;
 
 // Détecte le point de repos réel d'un stick en échantillonnant sa position brute
 // uniquement pendant les phases où elle reste stable (faible variance) sans
