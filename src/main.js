@@ -9,10 +9,11 @@ import {
   CHATTER_THRESHOLD_MS,
   NeutralDriftTracker,
   NEUTRAL_DRIFT_WARN_THRESHOLD,
+  NEUTRAL_DRIFT_BAD_THRESHOLD,
 } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
-import { MashSequenceTest, gradeForChatter, buildMashVerdict } from "./mashTest.js";
+import { MashSequenceTest, gradeForChatter, chatterRate, buildMashVerdict } from "./mashTest.js";
 import { createSilhouette, setSilhouetteType, updateSilhouette } from "./controllerSilhouette.js";
 
 const app = document.getElementById("app");
@@ -1218,6 +1219,7 @@ function buildDiagnosticReport() {
       sampleCount: latencySamples.length,
     },
     chatterEventsTotal: chatterTotal,
+    totalPressCount: [...pressCountByButton.values()].reduce((sum, n) => sum + n, 0),
     chatterByButton: [...chatterByButton.entries()]
       .map(([label, count]) => ({ label, count, pressCount: pressCountByButton.get(label) || count }))
       .sort((a, b) => b.count - a.count),
@@ -1235,8 +1237,14 @@ function buildDiagnosticReport() {
   };
 }
 
-function isAsymmetryWarning(calibrationText) {
-  return typeof calibrationText === "string" && calibrationText.startsWith("Asymétrie détectée");
+// Le seuil "bad" (35%) est environ le double du seuil de détection (18% dans analyzeRange):
+// une asymétrie franchement au-dessus du bruit de mesure plutôt qu'un cas limite.
+const ASYMMETRY_BAD_THRESHOLD_PERCENT = 35;
+
+function asymmetryPercent(calibrationText) {
+  if (typeof calibrationText !== "string") return null;
+  const match = calibrationText.match(/^Asymétrie détectée \((\d+)%\)/);
+  return match ? Number(match[1]) : null;
 }
 
 function computeDiagnosticVerdict(report) {
@@ -1248,13 +1256,20 @@ function computeDiagnosticVerdict(report) {
     items.push({ status: "ok", title: "Manette", text: `${report.gamepad.id} détectée, ${report.gamepad.buttonCount} boutons, ${report.gamepad.axisCount} axes.` });
   }
 
-  const leftWarn = isAsymmetryWarning(report.calibration.left);
-  const rightWarn = isAsymmetryWarning(report.calibration.right);
+  const leftPercent = asymmetryPercent(report.calibration.left);
+  const rightPercent = asymmetryPercent(report.calibration.right);
   if (!report.calibration.left && !report.calibration.right) {
     items.push({ status: "neutral", title: "Sticks", text: "Aucune calibration de range effectuée, usure/drift localisé non vérifié." });
-  } else if (leftWarn || rightWarn) {
-    const sides = [leftWarn ? "gauche" : null, rightWarn ? "droit" : null].filter(Boolean).join(" et ");
-    items.push({ status: "warn", title: "Sticks", text: `Asymétrie détectée sur le stick ${sides}, possible usure ou drift localisé, voir détail ci-dessous.` });
+  } else if (leftPercent != null || rightPercent != null) {
+    const sides = [leftPercent != null ? "gauche" : null, rightPercent != null ? "droit" : null].filter(Boolean).join(" et ");
+    const worstPercent = Math.max(leftPercent ?? 0, rightPercent ?? 0);
+    const status = worstPercent >= ASYMMETRY_BAD_THRESHOLD_PERCENT ? "bad" : "warn";
+    const severity = status === "bad" ? "marquée" : "modérée";
+    items.push({
+      status,
+      title: "Sticks",
+      text: `Asymétrie ${severity} détectée sur le stick ${sides} (${worstPercent}%), ${status === "bad" ? "ce niveau pointe vers une vraie usure ou un stick drift localisé plutôt qu'un simple guide carré accentué" : "possible usure ou drift localisé"}, voir détail ci-dessous.`,
+    });
   } else {
     items.push({ status: "ok", title: "Sticks", text: "Aucune asymétrie détectée sur les sticks calibrés." });
   }
@@ -1270,10 +1285,19 @@ function computeDiagnosticVerdict(report) {
     if (driftedSides.length === 0) {
       items.push({ status: "ok", title: "Point neutre des sticks", text: "Aucun décalage notable du point de repos détecté." });
     } else {
+      const worstMagnitude = Math.max(
+        leftNeutral.measured ? leftNeutral.magnitude : 0,
+        rightNeutral.measured ? rightNeutral.magnitude : 0
+      );
+      const status = worstMagnitude > NEUTRAL_DRIFT_BAD_THRESHOLD ? "bad" : "warn";
+      const magnitudePercent = Math.round(worstMagnitude * 100);
       items.push({
-        status: "warn",
+        status,
         title: "Point neutre des sticks",
-        text: `Décalage du point de repos détecté sur le stick ${driftedSides.join(" et ")}, signe possible d'un drift naissant même si la calibration de range ne montre pas encore d'asymétrie.`,
+        text:
+          status === "bad"
+            ? `Décalage net du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), au-delà de la dead zone habituelle: signe probable d'un stick drift actif plutôt que d'un simple début de dérive.`
+            : `Décalage du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), signe possible d'un drift naissant même si la calibration de range ne montre pas encore d'asymétrie.`,
       });
     }
   }
@@ -1291,14 +1315,21 @@ function computeDiagnosticVerdict(report) {
   if (report.chatterEventsTotal === 0) {
     items.push({ status: "ok", title: "Chatter", text: "Aucun événement de chatter détecté." });
   } else {
+    // Comme pour le mashing: un chatter isolé sur des centaines d'appuis en usage normal
+    // n'a rien à voir avec un chatter récurrent. On juge sur le taux global plutôt que sur
+    // le compte brut, avec le même barème que le diagnostic des boutons pour rester cohérent.
     const worst = report.chatterByButton[0];
     const rate = worst ? Math.round((worst.count / worst.pressCount) * 100) : 0;
     const detail = worst ? ` Bouton le plus touché: ${worst.label} (${worst.count} fois sur ${worst.pressCount} appuis, soit ${rate}%).` : "";
-    items.push({
-      status: report.chatterEventsTotal >= 5 ? "bad" : "warn",
-      title: "Chatter",
-      text: `${report.chatterEventsTotal} événement(s) détecté(s) sur ${report.chatterByButton.length} bouton(s).${detail}`,
-    });
+    const grade = gradeForChatter(report.chatterEventsTotal, report.totalPressCount);
+    const globalRate = Math.round(chatterRate(report.chatterEventsTotal, report.totalPressCount) * 100);
+    let text;
+    if (grade.key === "na") {
+      text = `${report.chatterEventsTotal} événement(s) détecté(s), pas assez d'appuis en usage normal pour juger du taux réel, à confirmer avec le diagnostic des boutons.${detail}`;
+    } else {
+      text = `${report.chatterEventsTotal} événement(s) détecté(s) sur ${report.totalPressCount} appuis (${globalRate}%), fiabilité ${grade.label.toLowerCase()}.${detail}`;
+    }
+    items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Chatter", text });
   }
 
   if (!report.mashTest) {
@@ -1311,7 +1342,6 @@ function computeDiagnosticVerdict(report) {
     const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
     const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
     const grade = gradeForChatter(totalChatter, totalPressCount);
-    const statusByGrade = { excellent: "ok", good: "ok", fair: "warn", poor: "bad", na: "neutral" };
 
     let text;
     if (grade.key === "na") {
@@ -1322,7 +1352,7 @@ function computeDiagnosticVerdict(report) {
       const worst = [...report.mashTest].sort((a, b) => b.chatterCount - a.chatterCount)[0];
       text = `Fiabilité ${grade.label.toLowerCase()} (${totalChatter} chatter sur ${totalPressCount} appuis pendant le mashing). Bouton le plus touché: ${worst.label} (${worst.chatterCount} fois).`;
     }
-    items.push({ status: statusByGrade[grade.key], title: "Diagnostic des boutons", text });
+    items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Diagnostic des boutons", text });
   }
 
   return items;
@@ -1489,7 +1519,7 @@ function buildDiagnosticPdf(report) {
   }
 
   const chatterValue = String(report.chatterEventsTotal);
-  const chatterStatus = report.chatterEventsTotal === 0 ? "ok" : report.chatterEventsTotal >= 5 ? "bad" : "warn";
+  const chatterStatus = verdictItems.find((i) => i.title === "Chatter")?.status ?? "neutral";
 
   let mashValue = "N/A";
   let mashStatus = "neutral";
