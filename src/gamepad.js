@@ -94,7 +94,11 @@ export class NeutralDriftTracker {
 
   update(x, y, now) {
     this.samples.push({ x, y, t: now });
-    while (this.samples.length && now - this.samples[0].t > REST_SAMPLE_WINDOW_MS) {
+    // On ne purge le plus vieil échantillon que si le suivant couvre déjà la fenêtre à
+    // lui seul: avec un pas d'échantillonnage régulier, purger dès qu'on dépasse la
+    // fenêtre fait osciller l'âge du plus vieil échantillon juste sous le seuil pour
+    // toujours, sans jamais l'atteindre (effet de quantification).
+    while (this.samples.length > 1 && now - this.samples[1].t >= REST_SAMPLE_WINDOW_MS) {
       this.samples.shift();
     }
     if (this.samples.length < 10 || now - this.samples[0].t < REST_SAMPLE_WINDOW_MS) return;
