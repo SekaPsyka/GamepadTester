@@ -10,6 +10,10 @@ import {
   NeutralDriftTracker,
   NEUTRAL_DRIFT_WARN_THRESHOLD,
   NEUTRAL_DRIFT_BAD_THRESHOLD,
+  isButtonPressed,
+  TriggerStabilityTracker,
+  TRIGGER_REQUIRED_HOLD_MS,
+  triggerStabilityGrade,
 } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
@@ -107,10 +111,12 @@ app.innerHTML = `
         <div class="trigger-gauge">
           <div class="trigger-label"><span>LT</span><span class="mono" id="ltVal">0%</span></div>
           <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="ltBar"></div></div>
+          <p class="note" id="ltStabilityResult" title="Maintenez la gâchette à mi-course quelques instants: une valeur qui saute par paliers irréguliers plutôt que de rester lisse trahit un capteur usé.">Stabilité: maintenez à mi-course pour mesurer...</p>
         </div>
         <div class="trigger-gauge">
           <div class="trigger-label"><span>RT</span><span class="mono" id="rtVal">0%</span></div>
           <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="rtBar"></div></div>
+          <p class="note" id="rtStabilityResult" title="Maintenez la gâchette à mi-course quelques instants: une valeur qui saute par paliers irréguliers plutôt que de rester lisse trahit un capteur usé.">Stabilité: maintenez à mi-course pour mesurer...</p>
         </div>
       </div>
 
@@ -768,6 +774,56 @@ function renderNeutralDrift(side) {
   return offset;
 }
 
+const triggerStability = {
+  lt: new TriggerStabilityTracker(),
+  rt: new TriggerStabilityTracker(),
+};
+const triggerStabilityResultEls = {
+  lt: document.getElementById("ltStabilityResult"),
+  rt: document.getElementById("rtStabilityResult"),
+};
+
+function triggerStabilityStatus(result) {
+  if (!result.measured) return { key: "na", label: "Stabilité: maintenez à mi-course pour mesurer..." };
+  const grade = triggerStabilityGrade(result);
+  const detail = `écart ${(result.range * 100).toFixed(1)}%, ${result.stepCount} saut(s)`;
+  if (grade.key === "poor") {
+    return { key: "poor", label: `Stabilité: instable (${detail})` };
+  }
+  if (grade.key === "fair") {
+    return grade.isolated
+      ? { key: "fair", label: `Stabilité: écart isolé (${detail}), retestez pour confirmer` }
+      : { key: "fair", label: `Stabilité: léger bruit (${detail})` };
+  }
+  return { key: "excellent", label: `Stabilité: lisse (écart ${(result.range * 100).toFixed(1)}%) ✓` };
+}
+
+function renderTriggerStability(side, now) {
+  const tracker = triggerStability[side];
+  const result = tracker.getResult();
+  const el = triggerStabilityResultEls[side];
+
+  // Une nouvelle tentative en cours doit être visible même si un résultat précédent est
+  // déjà affiché, sinon on ne voit jamais qu'un nouveau test a démarré après relâchement.
+  if (tracker.isAttempting()) {
+    const remainingS = ((1 - tracker.getProgress(now)) * TRIGGER_REQUIRED_HOLD_MS) / 1000;
+    el.textContent = result.measured
+      ? `Stabilité: nouvelle mesure en cours, maintenez encore ${remainingS.toFixed(1)}s...`
+      : `Stabilité: maintenez encore ${remainingS.toFixed(1)}s...`;
+    el.className = "note mash-grade-na";
+    return result;
+  }
+  if (!result.measured) {
+    el.textContent = "Stabilité: maintenez à mi-course pour mesurer...";
+    el.className = "note mash-grade-na";
+    return result;
+  }
+  const status = triggerStabilityStatus(result);
+  el.textContent = status.label;
+  el.className = `note mash-grade-${status.key}`;
+  return result;
+}
+
 const mashOverlay = document.getElementById("mashOverlay");
 const mashSetupEl = document.getElementById("mashSetup");
 const mashRunningEl = document.getElementById("mashRunning");
@@ -1214,6 +1270,10 @@ function buildDiagnosticReport() {
       left: neutralDrift.left.getOffset(),
       right: neutralDrift.right.getOffset(),
     },
+    triggerStability: {
+      lt: triggerStability.lt.getResult(),
+      rt: triggerStability.rt.getResult(),
+    },
     latency: {
       averageMs: currentAvgLatencyMs != null ? Number(currentAvgLatencyMs.toFixed(1)) : null,
       sampleCount: latencySamples.length,
@@ -1298,6 +1358,40 @@ function computeDiagnosticVerdict(report) {
           status === "bad"
             ? `Décalage net du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), au-delà de la dead zone habituelle: signe probable d'un stick drift actif plutôt que d'un simple début de dérive.`
             : `Décalage du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), signe possible d'un drift naissant même si la calibration de range ne montre pas encore d'asymétrie.`,
+      });
+    }
+  }
+
+  const { lt: ltStability, rt: rtStability } = report.triggerStability;
+  if (!ltStability.measured && !rtStability.measured) {
+    items.push({ status: "neutral", title: "Gâchettes", text: "Stabilité pas encore mesurée, maintenez chaque gâchette à mi-course quelques secondes." });
+  } else {
+    const ltGrade = triggerStabilityGrade(ltStability);
+    const rtGrade = triggerStabilityGrade(rtStability);
+    const unstableSides = [
+      ltGrade.key !== "na" && ltGrade.key !== "excellent" ? "LT" : null,
+      rtGrade.key !== "na" && rtGrade.key !== "excellent" ? "RT" : null,
+    ].filter(Boolean);
+    if (unstableSides.length === 0) {
+      items.push({ status: "ok", title: "Gâchettes", text: "Signal lisse sur les gâchettes tenues à un palier fixe, aucun signe d'usure du capteur." });
+    } else {
+      const worstGrade = [ltGrade, rtGrade].some((g) => g.key === "poor") ? "poor" : "fair";
+      const anyIsolated = (ltGrade.isolated || rtGrade.isolated) && worstGrade !== "poor";
+      const worstRange = Math.max(
+        ltStability.measured ? ltStability.range : 0,
+        rtStability.measured ? rtStability.range : 0
+      );
+      const status = worstGrade === "poor" ? "bad" : "warn";
+      const rangePercent = Math.round(worstRange * 100);
+      items.push({
+        status,
+        title: "Gâchettes",
+        text:
+          worstGrade === "poor"
+            ? `Signal instable détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, sauts répétés): ce niveau dépasse largement un simple tremblement de doigt, signe probable d'un capteur/potentiomètre qui décroche.`
+            : anyIsolated
+              ? `Écart isolé détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, saut unique): probablement un accident de mesure ponctuel plutôt qu'un vrai défaut, retestez pour confirmer.`
+              : `Léger bruit détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu), à surveiller mais pas encore franchement anormal.`,
       });
     }
   }
@@ -1640,6 +1734,41 @@ function buildDiagnosticPdf(report) {
   doc.setFont(undefined, "normal");
   y = pdfDivider(doc, sticksEndY + 3);
 
+  y = pdfEnsureSpace(doc, y, 36);
+  y = pdfPanelHeader(doc, "Gâchettes — stabilité du signal", y, PDF_ACCENT);
+  const triggerSides = [
+    { key: "lt", label: "LT / L2", x: PDF_MARGIN },
+    { key: "rt", label: "RT / R2", x: PDF_MARGIN + colWidth + colGap },
+  ];
+  const triggersStartY = y;
+  let triggersEndY = y;
+  for (const side of triggerSides) {
+    let cy = triggersStartY;
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...PDF_DARK);
+    doc.text(side.label.toUpperCase(), side.x, cy, { charSpace: 0.2 });
+    cy += 5;
+
+    const result = report.triggerStability[side.key];
+    const grade = triggerStabilityGrade(result);
+    const qualifier =
+      grade.key === "poor" ? "(instable)" : grade.key === "fair" ? (grade.isolated ? "(écart isolé, à confirmer)" : "(léger bruit)") : "(lisse)";
+    const stabilityText = result.measured
+      ? `Écart à palier tenu: ${(result.range * 100).toFixed(1)}% (${result.stepCount} saut(s)) ${qualifier}`
+      : "Pas encore mesuré (maintenez à mi-course).";
+    const stabilityLines = doc.splitTextToSize(stabilityText, colWidth);
+    doc.setFont("courier", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...(grade.key === "poor" ? PDF_STATUS_COLORS.bad : grade.key === "fair" ? PDF_STATUS_COLORS.warn : PDF_MUTED));
+    doc.text(stabilityLines, side.x, cy);
+    cy += stabilityLines.length * 4 + 2;
+
+    triggersEndY = Math.max(triggersEndY, cy);
+  }
+  doc.setFont(undefined, "normal");
+  y = pdfDivider(doc, triggersEndY + 3);
+
   y = pdfEnsureSpace(doc, y, 32);
   y = pdfPanelHeader(doc, "Latence & chatter", y, PDF_ACCENT);
   doc.setFontSize(9.5);
@@ -1881,6 +2010,11 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
   neutralDrift.right.reset();
   renderNeutralDrift("left");
   renderNeutralDrift("right");
+
+  triggerStability.lt.reset();
+  triggerStability.rt.reset();
+  renderTriggerStability("lt", performance.now());
+  renderTriggerStability("rt", performance.now());
 });
 
 let lastFrameTime = performance.now();
@@ -1909,6 +2043,8 @@ function loop() {
       lastReleaseTimes = [];
       neutralDrift.left.reset();
       neutralDrift.right.reset();
+      triggerStability.lt.reset();
+      triggerStability.rt.reset();
       const controllerType = detectControllerType(pad.id);
       if (controllerType !== currentSilhouetteType) {
         currentSilhouetteType = controllerType;
@@ -1984,16 +2120,21 @@ function loop() {
     triggerHistoryRT.shift();
     drawTriggerHistory(triggerHistoryCtx, triggerHistoryCanvas, triggerHistoryLT, triggerHistoryRT);
 
+    triggerStability.lt.update(lt, now);
+    triggerStability.rt.update(rt, now);
+    renderTriggerStability("lt", now);
+    renderTriggerStability("rt", now);
+
     updateSilhouette(silhouette, pad);
 
     pad.buttons.forEach((btn, i) => {
       const cell = buttonCells[i];
-      const pressed = btn.pressed || btn.value > 0.08;
+      const wasPressed = prevButtonStates[i] || false;
+      const pressed = isButtonPressed(btn, i, wasPressed);
       if (cell) {
         if (pressed) cell.classList.add("active");
         else cell.classList.remove("active");
       }
-      const wasPressed = prevButtonStates[i] || false;
       if (pressed && !wasPressed) {
         const latency = Number.isFinite(pad.timestamp) && pad.timestamp > 0 ? now - pad.timestamp : null;
         const label = currentLabels[i] || `Bouton ${i}`;

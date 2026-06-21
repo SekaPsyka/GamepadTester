@@ -10,6 +10,30 @@ export const BUTTON_LABELS = LABEL_SETS.xbox;
 // une vraie double-pression humaine, c'est un signe de chatter/contact usé.
 export const CHATTER_THRESHOLD_MS = 60;
 
+// LT/RT (L2/R2) sont toujours aux index 6 et 7 dans le mapping Gamepad API "standard",
+// quelle que soit la marque détectée.
+export const TRIGGER_BUTTON_INDICES = new Set([6, 7]);
+
+export const PRESS_THRESHOLD = 0.08;
+// Une gâchette est un capteur analogique continu, pas un switch binaire: comparer sa
+// valeur à un seuil unique fait osciller l'état "pressé" autour de ce seuil au moindre
+// bruit de capteur ou jeu mécanique du ressort, et se lit à tort comme du chatter. On
+// presse plus haut qu'on ne relâche (hystérésis) pour absorber ce bruit, sans masquer
+// une oscillation large et rapide qui pointerait vers un vrai défaut.
+const TRIGGER_PRESS_THRESHOLD = 0.12;
+const TRIGGER_RELEASE_THRESHOLD = 0.05;
+
+// On ignore btn.pressed pour les gâchettes: ce booléen vient déjà d'un seuillage interne
+// au navigateur/pilote, potentiellement aussi bruité que le nôtre, et il contournerait
+// l'hystérésis si on l'utilisait en OR comme pour les boutons digitaux.
+export function isButtonPressed(btn, index, wasPressed) {
+  if (!btn) return false;
+  if (TRIGGER_BUTTON_INDICES.has(index)) {
+    return wasPressed ? btn.value > TRIGGER_RELEASE_THRESHOLD : btn.value > TRIGGER_PRESS_THRESHOLD;
+  }
+  return btn.pressed || btn.value > PRESS_THRESHOLD;
+}
+
 export function detectControllerType(id = "") {
   const lower = id.toLowerCase();
   if (/xbox|xinput/.test(lower)) return "xbox";
@@ -70,7 +94,11 @@ export class NeutralDriftTracker {
 
   update(x, y, now) {
     this.samples.push({ x, y, t: now });
-    while (this.samples.length && now - this.samples[0].t > REST_SAMPLE_WINDOW_MS) {
+    // On ne purge le plus vieil échantillon que si le suivant couvre déjà la fenêtre à
+    // lui seul: avec un pas d'échantillonnage régulier, purger dès qu'on dépasse la
+    // fenêtre fait osciller l'âge du plus vieil échantillon juste sous le seuil pour
+    // toujours, sans jamais l'atteindre (effet de quantification).
+    while (this.samples.length > 1 && now - this.samples[1].t >= REST_SAMPLE_WINDOW_MS) {
       this.samples.shift();
     }
     if (this.samples.length < 10 || now - this.samples[0].t < REST_SAMPLE_WINDOW_MS) return;
@@ -97,5 +125,115 @@ export class NeutralDriftTracker {
     this.samples = [];
     this.offset = { x: 0, y: 0 };
     this.measured = false;
+  }
+}
+
+// Mesurer la "stabilité" à 0 (repos) n'a pas de sens, ce n'est pas un signal analogique
+// engagé.
+const TRIGGER_ENGAGED_MIN = 0.15;
+// Durée à tenir avant de valider la mesure: assez longue pour moyenner le bruit sur
+// plusieurs échantillons, assez courte pour rester confortable à tenir à la main.
+export const TRIGGER_REQUIRED_HOLD_MS = 5000;
+// Un mouvement volontaire (l'utilisateur presse ou relâche progressivement, ou est en
+// train de positionner son doigt) ferait varier la valeur sur toute la tentative sans
+// que ce soit un défaut de capteur. On ne valide la tentative que si la position n'a
+// pas dérivé entre sa première et sa seconde moitié, indépendamment du bruit instantané.
+const TRIGGER_HOLD_TOLERANCE = 0.04;
+// Un saut net (escalier) entre deux frames consécutives n'a rien à voir avec le bruit
+// continu d'un capteur sain.
+const TRIGGER_STEP_DELTA = 0.02;
+// Le bruit résiduel d'un capteur de gâchette sain, doigt tenu stable, reste très fin.
+export const TRIGGER_STABILITY_WARN_RANGE = 0.02;
+// Au-delà, l'amplitude dépasse largement ce qu'un tremblement de doigt peut expliquer:
+// signe d'un potentiomètre/capteur qui décroche. Mais un tremblement involontaire produit
+// le même genre d'écart brut qu'un défaut de capteur: ce seuil seul ne suffit pas à
+// trancher, voir TRIGGER_ISOLATED_STEP_LIMIT ci-dessous.
+export const TRIGGER_STABILITY_BAD_RANGE = 0.05;
+// Un unique saut sur tout un maintien de TRIGGER_REQUIRED_HOLD_MS (un hoquet Bluetooth,
+// une frame ratée) ne dit rien sur l'état du capteur — c'est la répétition du saut qui
+// distingue un vrai motif (tremblement ou défaut) d'un accident de mesure isolé.
+const TRIGGER_ISOLATED_STEP_LIMIT = 1;
+
+// Centralise l'interprétation d'une mesure de stabilité de gâchette: un écart au-delà du
+// seuil "instable" causé par un saut isolé est requalifié en bruit "à confirmer" plutôt
+// que classé directement comme un défaut matériel.
+export function triggerStabilityGrade(result) {
+  if (!result.measured) return { key: "na", isolated: false };
+  if (result.range <= TRIGGER_STABILITY_WARN_RANGE) return { key: "excellent", isolated: false };
+  if (result.range <= TRIGGER_STABILITY_BAD_RANGE) return { key: "fair", isolated: false };
+  if (result.stepCount <= TRIGGER_ISOLATED_STEP_LIMIT) return { key: "fair", isolated: true };
+  return { key: "poor", isolated: false };
+}
+
+// Détecte si une gâchette analogique tenue à un palier fixe pendant TRIGGER_REQUIRED_HOLD_MS
+// produit un signal lisse ou "en escalier" (paliers irréguliers, signe d'un capteur usé).
+// Une fois une mesure validée, elle reste affichée (sticky) même après relâchement de la
+// gâchette: sans ça, le résultat disparaissait dès qu'on arrêtait de tenir, juste avant
+// l'export du rapport.
+export class TriggerStabilityTracker {
+  constructor() {
+    this.samples = []; // { value, t }, vidé à chaque relâchement
+    this.holdStartedAt = null;
+    this.locked = false;
+    this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
+  }
+
+  update(value, now) {
+    if (value < TRIGGER_ENGAGED_MIN) {
+      // Gâchette relâchée: on abandonne la tentative en cours mais on garde la dernière
+      // mesure déjà validée plutôt que de l'effacer.
+      this.samples = [];
+      this.holdStartedAt = null;
+      this.locked = false;
+      return;
+    }
+    if (this.locked) return;
+    if (this.holdStartedAt == null) this.holdStartedAt = now;
+    this.samples.push({ value, t: now });
+
+    if (now - this.holdStartedAt < TRIGGER_REQUIRED_HOLD_MS) return;
+
+    const values = this.samples.map((s) => s.value);
+    const mid = Math.floor(values.length / 2);
+    const firstHalfAvg = values.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+    const secondHalfValues = values.slice(mid);
+    const secondHalfAvg = secondHalfValues.reduce((a, b) => a + b, 0) / secondHalfValues.length;
+    if (Math.abs(secondHalfAvg - firstHalfAvg) > TRIGGER_HOLD_TOLERANCE) return;
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const range = Math.max(...values) - Math.min(...values);
+    let stepCount = 0;
+    for (let i = 1; i < values.length; i++) {
+      if (Math.abs(values[i] - values[i - 1]) > TRIGGER_STEP_DELTA) stepCount++;
+    }
+
+    this.result = { measured: true, range, stepCount, level: avg };
+    this.locked = true;
+  }
+
+  // Fraction (0..1) de la durée de maintien requise déjà écoulée, pour afficher un
+  // compte à rebours pendant que l'utilisateur tient la gâchette.
+  getProgress(now) {
+    if (this.locked) return 1;
+    if (this.holdStartedAt == null) return 0;
+    return Math.min(1, (now - this.holdStartedAt) / TRIGGER_REQUIRED_HOLD_MS);
+  }
+
+  // Une tentative est en cours (gâchette tenue, pas encore validée) — y compris quand un
+  // résultat précédent est déjà affiché, pour distinguer "nouvelle mesure en cours" de
+  // "résultat de la dernière mesure".
+  isAttempting() {
+    return this.holdStartedAt != null && !this.locked;
+  }
+
+  getResult() {
+    return { ...this.result };
+  }
+
+  reset() {
+    this.samples = [];
+    this.holdStartedAt = null;
+    this.locked = false;
+    this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
   }
 }
