@@ -19,7 +19,7 @@ const app = document.getElementById("app");
 
 app.innerHTML = `
   <header>
-    <div class="header-row">
+    <div class="header-row header-row--brand">
       <div class="header-id">
         <h1>Gamepad Tester</h1>
         <div class="status-pill"><span class="dot" id="dot"></span><span id="padName">Aucune manette détectée</span></div>
