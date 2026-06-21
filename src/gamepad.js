@@ -128,14 +128,16 @@ export class NeutralDriftTracker {
   }
 }
 
-const TRIGGER_HOLD_WINDOW_MS = 700;
 // Mesurer la "stabilité" à 0 (repos) n'a pas de sens, ce n'est pas un signal analogique
 // engagé.
 const TRIGGER_ENGAGED_MIN = 0.15;
-// Un mouvement volontaire lent (l'utilisateur presse ou relâche progressivement) ferait
-// varier la valeur sur toute la fenêtre sans que ce soit un défaut de capteur. On ne
-// retient la fenêtre comme "tenue" que si la position n'a pas dérivé entre sa première
-// et sa seconde moitié, indépendamment du bruit instantané à l'intérieur de la fenêtre.
+// Durée à tenir avant de valider la mesure: assez longue pour moyenner le bruit sur
+// plusieurs échantillons, assez courte pour rester confortable à tenir à la main.
+export const TRIGGER_REQUIRED_HOLD_MS = 2000;
+// Un mouvement volontaire (l'utilisateur presse ou relâche progressivement, ou est en
+// train de positionner son doigt) ferait varier la valeur sur toute la tentative sans
+// que ce soit un défaut de capteur. On ne valide la tentative que si la position n'a
+// pas dérivé entre sa première et sa seconde moitié, indépendamment du bruit instantané.
 const TRIGGER_HOLD_TOLERANCE = 0.04;
 // Un saut net (escalier) entre deux frames consécutives n'a rien à voir avec le bruit
 // continu d'un capteur sain.
@@ -146,45 +148,42 @@ export const TRIGGER_STABILITY_WARN_RANGE = 0.02;
 // signe d'un potentiomètre/capteur qui décroche.
 export const TRIGGER_STABILITY_BAD_RANGE = 0.05;
 
-// Détecte si une gâchette analogique tenue à un palier fixe produit un signal lisse ou
-// "en escalier" (paliers irréguliers, signe d'un capteur usé) — distingue ce bruit d'un
-// mouvement volontaire en comparant le début et la fin de la fenêtre d'échantillonnage.
+// Détecte si une gâchette analogique tenue à un palier fixe pendant TRIGGER_REQUIRED_HOLD_MS
+// produit un signal lisse ou "en escalier" (paliers irréguliers, signe d'un capteur usé).
+// Une fois une mesure validée, elle reste affichée (sticky) même après relâchement de la
+// gâchette: sans ça, le résultat disparaissait dès qu'on arrêtait de tenir, juste avant
+// l'export du rapport.
 export class TriggerStabilityTracker {
   constructor() {
-    this.samples = []; // { value, t }
+    this.samples = []; // { value, t }, vidé à chaque relâchement
+    this.holdStartedAt = null;
+    this.locked = false;
     this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
   }
 
   update(value, now) {
-    this.samples.push({ value, t: now });
-    // On ne purge le plus vieil échantillon que si le suivant couvre déjà la fenêtre à
-    // lui seul: avec un pas d'échantillonnage régulier, purger dès qu'on dépasse la
-    // fenêtre fait osciller l'âge du plus vieil échantillon juste sous le seuil pour
-    // toujours, sans jamais l'atteindre (effet de quantification).
-    while (this.samples.length > 1 && now - this.samples[1].t >= TRIGGER_HOLD_WINDOW_MS) {
-      this.samples.shift();
-    }
-    if (this.samples.length < 8 || now - this.samples[0].t < TRIGGER_HOLD_WINDOW_MS) {
-      this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
+    if (value < TRIGGER_ENGAGED_MIN) {
+      // Gâchette relâchée: on abandonne la tentative en cours mais on garde la dernière
+      // mesure déjà validée plutôt que de l'effacer.
+      this.samples = [];
+      this.holdStartedAt = null;
+      this.locked = false;
       return;
     }
+    if (this.locked) return;
+    if (this.holdStartedAt == null) this.holdStartedAt = now;
+    this.samples.push({ value, t: now });
+
+    if (now - this.holdStartedAt < TRIGGER_REQUIRED_HOLD_MS) return;
 
     const values = this.samples.map((s) => s.value);
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
-    if (avg < TRIGGER_ENGAGED_MIN) {
-      this.result = { measured: false, range: 0, stepCount: 0, level: avg };
-      return;
-    }
-
     const mid = Math.floor(values.length / 2);
     const firstHalfAvg = values.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
     const secondHalfValues = values.slice(mid);
     const secondHalfAvg = secondHalfValues.reduce((a, b) => a + b, 0) / secondHalfValues.length;
-    if (Math.abs(secondHalfAvg - firstHalfAvg) > TRIGGER_HOLD_TOLERANCE) {
-      this.result = { measured: false, range: 0, stepCount: 0, level: avg };
-      return;
-    }
+    if (Math.abs(secondHalfAvg - firstHalfAvg) > TRIGGER_HOLD_TOLERANCE) return;
 
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
     const range = Math.max(...values) - Math.min(...values);
     let stepCount = 0;
     for (let i = 1; i < values.length; i++) {
@@ -192,6 +191,15 @@ export class TriggerStabilityTracker {
     }
 
     this.result = { measured: true, range, stepCount, level: avg };
+    this.locked = true;
+  }
+
+  // Fraction (0..1) de la durée de maintien requise déjà écoulée, pour afficher un
+  // compte à rebours pendant que l'utilisateur tient la gâchette.
+  getProgress(now) {
+    if (this.locked) return 1;
+    if (this.holdStartedAt == null) return 0;
+    return Math.min(1, (now - this.holdStartedAt) / TRIGGER_REQUIRED_HOLD_MS);
   }
 
   getResult() {
@@ -200,6 +208,8 @@ export class TriggerStabilityTracker {
 
   reset() {
     this.samples = [];
+    this.holdStartedAt = null;
+    this.locked = false;
     this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
   }
 }

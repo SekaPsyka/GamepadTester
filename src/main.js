@@ -14,6 +14,7 @@ import {
   TriggerStabilityTracker,
   TRIGGER_STABILITY_WARN_RANGE,
   TRIGGER_STABILITY_BAD_RANGE,
+  TRIGGER_REQUIRED_HOLD_MS,
 } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
@@ -794,10 +795,22 @@ function triggerStabilityStatus(result) {
   return { key: "excellent", label: `Stabilité: lisse (écart ${(result.range * 100).toFixed(1)}%) ✓` };
 }
 
-function renderTriggerStability(side) {
-  const result = triggerStability[side].getResult();
-  const status = triggerStabilityStatus(result);
+function renderTriggerStability(side, now) {
+  const tracker = triggerStability[side];
+  const result = tracker.getResult();
   const el = triggerStabilityResultEls[side];
+  if (!result.measured) {
+    const progress = tracker.getProgress(now);
+    if (progress > 0) {
+      const remainingS = ((1 - progress) * TRIGGER_REQUIRED_HOLD_MS) / 1000;
+      el.textContent = `Stabilité: maintenez encore ${remainingS.toFixed(1)}s...`;
+    } else {
+      el.textContent = "Stabilité: maintenez à mi-course pour mesurer...";
+    }
+    el.className = "note mash-grade-na";
+    return result;
+  }
+  const status = triggerStabilityStatus(result);
   el.textContent = status.label;
   el.className = `note mash-grade-${status.key}`;
   return result;
@@ -1985,8 +1998,8 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
 
   triggerStability.lt.reset();
   triggerStability.rt.reset();
-  renderTriggerStability("lt");
-  renderTriggerStability("rt");
+  renderTriggerStability("lt", performance.now());
+  renderTriggerStability("rt", performance.now());
 });
 
 let lastFrameTime = performance.now();
@@ -2094,8 +2107,8 @@ function loop() {
 
     triggerStability.lt.update(lt, now);
     triggerStability.rt.update(rt, now);
-    renderTriggerStability("lt");
-    renderTriggerStability("rt");
+    renderTriggerStability("lt", now);
+    renderTriggerStability("rt", now);
 
     updateSilhouette(silhouette, pad);
 
