@@ -168,22 +168,37 @@ app.innerHTML = `
       <p class="note">Dernières 20 entrées, avec latence détectée (delta entre le timestamp matériel de la manette et la réception navigateur, si supporté).</p>
     </section>
 
-    <section class="panel span-2">
-      <h2>Comparaison filaire / sans-fil</h2>
-      <p class="note" style="margin:0 0 10px">Branchez la manette dans un mode, cliquez sur "Capturer", puis appuyez rapidement sur plusieurs boutons pendant les 5 secondes du compte à rebours (au moins 8 appuis). Changez ensuite de mode (câble/Bluetooth) et recapturez pour comparer.</p>
-      <div class="compare-row">
-        <div class="compare-col">
-          <h3>Filaire</h3>
-          <button id="captureWired">Capturer la session actuelle</button>
-          <p class="note" id="wiredSnapshot">Aucune capture.</p>
+    <section class="panel span-2 latency-panel">
+      <div class="latency-heading">
+        <div>
+          <h2>Mesure de latence</h2>
+          <p>Testez librement une connexion. Si vous mesurez les deux, leur écart sera calculé automatiquement.</p>
         </div>
-        <div class="compare-col">
-          <h3>Sans-fil</h3>
-          <button id="captureWireless">Capturer la session actuelle</button>
-          <p class="note" id="wirelessSnapshot">Aucune capture.</p>
-        </div>
+        <span class="latency-protocol">5 secondes · 8 appuis minimum</span>
       </div>
-      <p class="note" id="compareDelta"></p>
+      <div class="compare-row">
+        <article class="compare-col" id="wiredCard" data-state="idle">
+          <div class="compare-col-heading">
+            <svg class="connection-icon" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 16h16m0-5v10m0-8h6v6h-6"/></svg>
+            <div><h3>Filaire</h3><span>Câble USB</span></div>
+          </div>
+          <div class="compare-readout" id="wiredSnapshot" aria-live="polite"></div>
+          <div class="compare-pulses" id="wiredPulses" aria-hidden="true">${Array.from({ length: 8 }, () => "<i></i>").join("")}</div>
+          <p class="compare-progress" id="wiredProgress">Objectif : 8 appuis minimum</p>
+          <button class="compare-action" id="captureWired">Démarrer le test filaire</button>
+        </article>
+        <article class="compare-col" id="wirelessCard" data-state="idle">
+          <div class="compare-col-heading">
+            <svg class="connection-icon" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 13a14 14 0 0 1 20 0M10 18a8.5 8.5 0 0 1 12 0M14 23a3 3 0 0 1 4 0"/></svg>
+            <div><h3>Sans-fil</h3><span>Bluetooth ou récepteur</span></div>
+          </div>
+          <div class="compare-readout" id="wirelessSnapshot" aria-live="polite"></div>
+          <div class="compare-pulses" id="wirelessPulses" aria-hidden="true">${Array.from({ length: 8 }, () => "<i></i>").join("")}</div>
+          <p class="compare-progress" id="wirelessProgress">Objectif : 8 appuis minimum</p>
+          <button class="compare-action" id="captureWireless">Démarrer le test sans-fil</button>
+        </article>
+      </div>
+      <div class="compare-summary" id="compareDelta" aria-live="polite"></div>
     </section>
   </div>
 
@@ -896,6 +911,8 @@ function logPress(label, latencyMs) {
   pressLog.prepend(entry);
   while (pressLog.children.length > 20) pressLog.removeChild(pressLog.lastChild);
 
+  if (compareCapture && compareCapture.endAt == null) beginCompareCountdown();
+
   if (latencyMs != null && latencyMs >= 0 && latencyMs < 500) {
     latencySamples.push(latencyMs);
     if (latencySamples.length > 30) latencySamples.shift();
@@ -916,32 +933,91 @@ const compareElByMode = {
   wired: document.getElementById("wiredSnapshot"),
   wireless: document.getElementById("wirelessSnapshot"),
 };
+const compareCardByMode = {
+  wired: document.getElementById("wiredCard"),
+  wireless: document.getElementById("wirelessCard"),
+};
+const compareProgressByMode = {
+  wired: document.getElementById("wiredProgress"),
+  wireless: document.getElementById("wirelessProgress"),
+};
+const comparePulsesByMode = {
+  wired: [...document.querySelectorAll("#wiredPulses i")],
+  wireless: [...document.querySelectorAll("#wirelessPulses i")],
+};
 const compareButtonByMode = {
   wired: document.getElementById("captureWired"),
   wireless: document.getElementById("captureWireless"),
 };
 const compareDeltaEl = document.getElementById("compareDelta");
-let compareCapture = null; // { mode, padId, samples: [], endAt }
+let compareCapture = null; // { mode, padId, samples: [], endAt, lastSeconds, lastCount }
+
+function getCompareActionLabel(mode, repeat = false) {
+  const label = mode === "wired" ? "filaire" : "sans-fil";
+  return `${repeat ? "Refaire" : "Démarrer"} le test ${label}`;
+}
+
+function setComparePulseCount(mode, count, animateLast = false) {
+  comparePulsesByMode[mode].forEach((pulse, index) => {
+    pulse.classList.toggle("detected", index < Math.min(count, COMPARE_MIN_SAMPLES));
+    pulse.classList.toggle("just-detected", animateLast && index === Math.min(count, COMPARE_MIN_SAMPLES) - 1);
+  });
+}
 
 function renderCompareSnapshot(mode) {
   const snap = compareSnapshots[mode];
   const el = compareElByMode[mode];
+  const card = compareCardByMode[mode];
+  el.replaceChildren();
   if (!snap) {
-    el.textContent = "Aucune capture.";
+    card.dataset.state = "idle";
+    const title = document.createElement("strong");
+    title.className = "compare-readout-title";
+    title.textContent = "Prêt à mesurer";
+    const detail = document.createElement("span");
+    detail.className = "compare-readout-detail";
+    detail.textContent = mode === "wired" ? "Branchez la manette avec son câble." : "Connectez la manette sans câble.";
+    el.append(title, detail);
+    compareProgressByMode[mode].textContent = "Objectif : 8 appuis minimum";
+    compareButtonByMode[mode].textContent = getCompareActionLabel(mode);
+    setComparePulseCount(mode, 0);
     return;
   }
-  el.textContent = `${snap.padId} (latence moy.: ${snap.avgLatencyMs.toFixed(1)} ms, ${snap.sampleCount} échantillons, capturé à ${snap.capturedAt})`;
+  card.dataset.state = "complete";
+  const measure = document.createElement("div");
+  measure.className = "compare-measure";
+  const value = document.createElement("strong");
+  value.textContent = `${snap.avgLatencyMs.toFixed(1)} ms`;
+  const label = document.createElement("span");
+  label.textContent = "Latence moyenne";
+  measure.append(value, label);
+  const detail = document.createElement("span");
+  detail.className = "compare-readout-detail";
+  detail.textContent = `${snap.sampleCount} appuis · Mesuré à ${snap.capturedAt}`;
+  detail.title = snap.padId;
+  el.append(measure, detail);
+  compareProgressByMode[mode].textContent = "Mesure terminée";
+  compareButtonByMode[mode].textContent = getCompareActionLabel(mode, true);
+  setComparePulseCount(mode, COMPARE_MIN_SAMPLES);
 }
 
 function renderCompareDelta() {
   const { wired, wireless } = compareSnapshots;
   if (!wired || !wireless) {
-    compareDeltaEl.textContent = "";
+    compareDeltaEl.replaceChildren();
+    compareDeltaEl.classList.remove("visible");
     return;
   }
   const delta = wireless.avgLatencyMs - wired.avgLatencyMs;
-  const sign = delta >= 0 ? "+" : "";
-  compareDeltaEl.textContent = `Écart sans-fil vs filaire: ${sign}${delta.toFixed(1)} ms${delta > 0 ? " (sans-fil plus lent)" : delta < 0 ? " (sans-fil plus rapide, vérifiez vos captures)" : " (aucune différence)"}`;
+  const heading = document.createElement("span");
+  heading.className = "compare-summary-label";
+  heading.textContent = "Comparaison disponible";
+  const value = document.createElement("strong");
+  value.textContent = `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} ms`;
+  const detail = document.createElement("span");
+  detail.textContent = delta > 0 ? "Le sans-fil répond plus lentement que le filaire." : delta < 0 ? "Le sans-fil paraît plus rapide ; refaites les mesures pour confirmer." : "Aucun écart mesurable entre les deux connexions.";
+  compareDeltaEl.replaceChildren(heading, value, detail);
+  compareDeltaEl.classList.add("visible");
 }
 
 function setCompareButtonsDisabled(disabled) {
@@ -949,17 +1025,41 @@ function setCompareButtonsDisabled(disabled) {
   compareButtonByMode.wireless.disabled = disabled;
 }
 
+function beginCompareCountdown() {
+  if (!compareCapture || compareCapture.endAt != null) return;
+  const { mode } = compareCapture;
+  compareCapture.endAt = performance.now() + COMPARE_CAPTURE_DURATION_MS;
+  compareCardByMode[mode].dataset.state = "capturing";
+  setCompareButtonsDisabled(true);
+  compareButtonByMode[mode].textContent = "Test en cours…";
+  tickCompareCapture();
+}
+
 function tickCompareCapture() {
-  if (!compareCapture) return;
+  if (!compareCapture || compareCapture.endAt == null) return;
   const remainingMs = compareCapture.endAt - performance.now();
   if (remainingMs <= 0) {
     finishCompareCapture();
     return;
   }
-  const el = compareElByMode[compareCapture.mode];
+  const { mode } = compareCapture;
+  const el = compareElByMode[mode];
   const seconds = Math.ceil(remainingMs / 1000);
   const count = compareCapture.samples.length;
-  el.textContent = `Appuyez sur des boutons... ${seconds}s restantes (${count} échantillon${count === 1 ? "" : "s"})`;
+  if (seconds !== compareCapture.lastSeconds || count !== compareCapture.lastCount) {
+    el.replaceChildren();
+    const title = document.createElement("strong");
+    title.className = "compare-capture-title";
+    title.textContent = "Appuyez maintenant";
+    const timer = document.createElement("strong");
+    timer.className = "compare-timer mono";
+    timer.textContent = `${seconds} s`;
+    el.append(title, timer);
+    compareProgressByMode[mode].textContent = `${count}/${COMPARE_MIN_SAMPLES} appuis détectés`;
+    setComparePulseCount(mode, count, count !== compareCapture.lastCount);
+    compareCapture.lastSeconds = seconds;
+    compareCapture.lastCount = count;
+  }
   requestAnimationFrame(tickCompareCapture);
 }
 
@@ -967,10 +1067,20 @@ function finishCompareCapture() {
   const { mode, padId, samples } = compareCapture;
   compareCapture = null;
   setCompareButtonsDisabled(false);
-  compareButtonByMode[mode].textContent = "Capturer la session actuelle";
 
   if (samples.length < COMPARE_MIN_SAMPLES) {
-    compareElByMode[mode].textContent = `Pas assez d'échantillons (${samples.length}/${COMPARE_MIN_SAMPLES}), appuyez plus souvent sur des boutons puis recommencez.`;
+    const el = compareElByMode[mode];
+    compareCardByMode[mode].dataset.state = "error";
+    el.replaceChildren();
+    const title = document.createElement("strong");
+    title.className = "compare-readout-title";
+    title.textContent = "Mesure incomplète";
+    const detail = document.createElement("span");
+    detail.className = "compare-readout-detail";
+    detail.textContent = `${samples.length}/${COMPARE_MIN_SAMPLES} appuis détectés. Recommencez en appuyant plus souvent.`;
+    el.append(title, detail);
+    compareProgressByMode[mode].textContent = "Objectif non atteint";
+    compareButtonByMode[mode].textContent = getCompareActionLabel(mode, true);
     return;
   }
   compareSnapshots[mode] = {
@@ -984,20 +1094,52 @@ function finishCompareCapture() {
 }
 
 function captureCompareSnapshot(mode) {
-  if (compareCapture) return;
-  const pad = getSelectedGamepad();
-  if (!pad) {
-    compareElByMode[mode].textContent = "Aucune manette connectée.";
+  if (compareCapture) {
+    if (compareCapture.mode === mode && compareCapture.endAt == null) {
+      compareCapture = null;
+      setCompareButtonsDisabled(false);
+      renderCompareSnapshot(mode);
+    }
     return;
   }
-  compareCapture = { mode, padId: pad.id, samples: [], endAt: performance.now() + COMPARE_CAPTURE_DURATION_MS };
+  const pad = getSelectedGamepad();
+  if (!pad) {
+    const el = compareElByMode[mode];
+    compareCardByMode[mode].dataset.state = "error";
+    el.replaceChildren();
+    const title = document.createElement("strong");
+    title.className = "compare-readout-title";
+    title.textContent = "Aucune manette détectée";
+    const detail = document.createElement("span");
+    detail.className = "compare-readout-detail";
+    detail.textContent = "Connectez une manette avant de démarrer le test.";
+    el.append(title, detail);
+    return;
+  }
+  compareSnapshots[mode] = null;
+  renderCompareDelta();
+  compareCapture = { mode, padId: pad.id, samples: [], endAt: null, lastSeconds: null, lastCount: null };
+  compareCardByMode[mode].dataset.state = "waiting";
+  setComparePulseCount(mode, 0);
   setCompareButtonsDisabled(true);
-  compareButtonByMode[mode].textContent = "Capture en cours...";
-  tickCompareCapture();
+  compareButtonByMode[mode].disabled = false;
+  compareButtonByMode[mode].textContent = "Annuler";
+  const el = compareElByMode[mode];
+  el.replaceChildren();
+  const title = document.createElement("strong");
+  title.className = "compare-capture-title";
+  title.textContent = "Test prêt";
+  const detail = document.createElement("span");
+  detail.className = "compare-readout-detail";
+  detail.textContent = "Appuyez sur un bouton pour lancer le chrono.";
+  el.append(title, detail);
+  compareProgressByMode[mode].textContent = "En attente du premier appui";
 }
 
 document.getElementById("captureWired").addEventListener("click", () => captureCompareSnapshot("wired"));
 document.getElementById("captureWireless").addEventListener("click", () => captureCompareSnapshot("wireless"));
+renderCompareSnapshot("wired");
+renderCompareSnapshot("wireless");
 
 let prevButtonStates = [];
 let lastReleaseTimes = [];
@@ -1453,8 +1595,6 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
 
   compareCapture = null;
   setCompareButtonsDisabled(false);
-  compareButtonByMode.wired.textContent = "Capturer la session actuelle";
-  compareButtonByMode.wireless.textContent = "Capturer la session actuelle";
   compareSnapshots.wired = null;
   compareSnapshots.wireless = null;
   renderCompareSnapshot("wired");
