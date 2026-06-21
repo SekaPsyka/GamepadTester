@@ -23,9 +23,10 @@ body {
 }
 
 #app {
+  width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 24px 24px 60px;
+  padding: clamp(16px, 3vw, 24px) clamp(12px, 3vw, 24px) 60px;
 }
 
 header {
@@ -62,6 +63,8 @@ header {
 .header-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   margin-left: auto;
 }
@@ -169,7 +172,7 @@ h1 {
 
 .grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
   transition: opacity 0.25s ease, filter 0.25s ease;
 }
@@ -181,6 +184,7 @@ h1 {
 }
 
 .panel {
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 14px;
@@ -200,12 +204,27 @@ h1 {
   display: flex;
   gap: 18px;
   align-items: flex-start;
+  min-width: 0;
 }
 
 canvas.stick {
+  width: min(180px, 42%);
+  height: auto;
+  flex: none;
+  aspect-ratio: 1;
   background: #060710;
   border-radius: 50%;
   border: 1px solid var(--panel-border);
+}
+
+.sliders {
+  min-width: 0;
+}
+
+.calib-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .sliders label {
@@ -478,6 +497,11 @@ button:hover {
   border-color: var(--accent);
   color: var(--accent);
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 button.danger:hover {
@@ -1138,4 +1162,223 @@ select option {
 .mash-limits-note {
   margin-top: 10px;
   opacity: 0.75;
+}
+
+@media (max-width: 960px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .span-2 {
+    grid-column: auto;
+  }
+
+  .panel--trigger-vibration {
+    align-self: stretch;
+  }
+}
+
+@media (max-width: 720px) {
+  #app {
+    padding-bottom: 40px;
+  }
+
+  header {
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+  }
+
+  .header-row {
+    align-items: stretch;
+  }
+
+  .header-controls {
+    width: 100%;
+  }
+
+  .header-controls .field {
+    flex: 1 1 220px;
+  }
+
+  .header-controls select {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .header-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .header-actions button {
+    width: 100%;
+    min-height: 44px;
+    padding-inline: 8px;
+  }
+
+  .empty-state {
+    padding: 36px 18px;
+  }
+
+  .grid {
+    gap: 14px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  .motor-card-foot button,
+  .vib-presets button,
+  .calib-actions button,
+  .mash-actions button {
+    min-height: 44px;
+  }
+
+  input[type="range"] {
+    min-height: 32px;
+  }
+
+  .buttons-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .btn-cell {
+    min-width: 0;
+  }
+
+  .mash-overlay {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+
+  .mash-panel {
+    width: min(560px, 100%);
+    max-height: calc(100dvh - 24px);
+    margin: auto;
+    padding: 20px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+@media (max-width: 560px) {
+  h1 {
+    font-size: 20px;
+  }
+
+  .header-id,
+  .status-pill {
+    max-width: 100%;
+  }
+
+  #padName {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stick-row {
+    flex-direction: column;
+  }
+
+  canvas.stick {
+    width: min(180px, 70vw);
+    align-self: center;
+  }
+
+  .sliders {
+    width: 100%;
+  }
+
+  .calib-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .motor-cards {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vib-section-head {
+    gap: 12px;
+  }
+
+  .latency-protocol {
+    align-self: flex-start;
+  }
+
+  .press-log-columns,
+  .press-log-entry {
+    grid-template-columns: minmax(0, 1fr) 7ch minmax(58px, 7ch);
+    column-gap: 6px;
+  }
+
+  .press-log-columns > span:first-child,
+  .press-log-time {
+    display: none;
+  }
+
+  .press-log-columns,
+  .press-log {
+    padding-inline: 8px;
+  }
+
+  .press-log-status {
+    min-width: 0;
+    padding-inline: 4px;
+  }
+
+  .compare-col {
+    min-height: 230px;
+    padding: 14px;
+  }
+
+  .mash-panel {
+    padding: 18px 14px;
+    border-radius: 12px;
+  }
+
+  .mash-optimal-conditions {
+    padding: 12px;
+  }
+
+  .mash-optimal-conditions ul {
+    padding-left: 18px;
+    font-size: 13px;
+  }
+
+  .mash-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 360px) {
+  .header-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .header-controls .field {
+    flex-basis: 100%;
+  }
+
+  .buttons-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .trigger-gauges {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mash-actions {
+    flex-wrap: wrap;
+  }
 }

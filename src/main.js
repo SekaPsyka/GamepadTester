@@ -58,7 +58,7 @@ app.innerHTML = `
             Brut: <b class="mono" id="leftRaw">0.00, 0.00</b><br/>
             Ajusté: <b class="mono" id="leftAdj">0.00, 0.00</b>
           </div>
-          <div style="display:flex; gap:8px; margin-top:10px">
+          <div class="calib-actions">
             <button id="leftCalibBtn">Tester l'amplitude du stick</button>
             <button id="leftCalibReset" class="danger">Réinitialiser</button>
           </div>
@@ -81,7 +81,7 @@ app.innerHTML = `
             Brut: <b class="mono" id="rightRaw">0.00, 0.00</b><br/>
             Ajusté: <b class="mono" id="rightAdj">0.00, 0.00</b>
           </div>
-          <div style="display:flex; gap:8px; margin-top:10px">
+          <div class="calib-actions">
             <button id="rightCalibBtn">Tester l'amplitude du stick</button>
             <button id="rightCalibReset" class="danger">Réinitialiser</button>
           </div>
