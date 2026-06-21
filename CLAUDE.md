@@ -8,13 +8,15 @@ App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette
 - Vanilla JS, modules ES (`type: "module"`), pas de framework, pas de bundler de tests.
 - Commentaires uniquement pour expliquer un *pourquoi* non évident (seuils choisis, contournement, invariant) — jamais pour décrire ce que fait le code. Voir `gamepad.js` (`NEUTRAL_DRIFT_WARN_THRESHOLD`, `CHATTER_THRESHOLD_MS`) pour le ton attendu.
 - Détection du type de manette centralisée dans `detectControllerType()` (`src/gamepad.js`) — toujours réutiliser cette fonction plutôt que dupliquer une regex sur `pad.id`.
+- État pressé/relâché (digital ou gâchette analogique) centralisé dans `isButtonPressed()` (`src/gamepad.js`) — gère l'hystérésis sur LT/RT (index 6/7), toujours réutiliser plutôt que comparer `btn.value`/`btn.pressed` à la main.
+- Trackers de mesure passive en arrière-plan (pas de bouton "Démarrer le test" dédié) suivent le pattern `NeutralDriftTracker`/`TriggerStabilityTracker` (`src/gamepad.js`) : fenêtre glissante d'échantillons, ne purger le plus vieil échantillon que si le suivant couvre déjà seul la fenêtre (sinon, avec un pas d'échantillonnage régulier, l'âge du plus vieil échantillon oscille indéfiniment juste sous le seuil sans jamais l'atteindre).
 - Mapping standard Gamepad API : boutons 0-3 = A/B/X/Y (Croix/Cercle/Carré/Triangle), 4-5 = LB/RB (L1/R1), 6-7 = LT/RT (L2/R2), 8-9 = View/Menu (Share/Options), 10-11 = clic stick gauche/droit, 12-15 = D-pad haut/bas/gauche/droite, 16 = Guide/PS. `pad.axes[0..1]` = stick gauche X/Y, `[2..3]` = stick droit X/Y.
 - Interface entièrement responsive (`src/style.css`, breakpoints à 960px/720px/560px/360px) — toute nouvelle UI doit rester utilisable sur mobile (cibles tactiles ≥44px, pas d'overflow horizontal).
 
 ## Structure
 
 - `src/main.js` — point d'entrée, construit le DOM, boucle `requestAnimationFrame`, orchestre tous les modules. Contient aussi l'export du rapport de diagnostic en PDF (`buildDiagnosticReport()` collecte l'état courant, `buildDiagnosticPdf()` le met en page via `jspdf`/`jspdf-autotable`, seules dépendances npm directes du projet).
-- `src/gamepad.js` — accès Gamepad API, détection de type de manette, labels de boutons, dead zone, détection de drift du point neutre (`NeutralDriftTracker`).
+- `src/gamepad.js` — accès Gamepad API, détection de type de manette, labels de boutons, dead zone, état pressé digital/analogique (`isButtonPressed`), détection de drift du point neutre (`NeutralDriftTracker`) et de stabilité des gâchettes tenues à un palier (`TriggerStabilityTracker`).
 - `src/controllerSilhouette.js` — silhouette visuelle (image SVG Xbox/PlayStation + zones de surbrillance positionnées en % du viewBox d'origine). Layouts de boutons/sticks codés en dur dans `LAYOUTS`. Se dégrade proprement (frame caché) pour les manettes "generic".
 - `src/mashTest.js` — diagnostic des boutons par mashing (chatter, double-déclenchement, boutons lents).
 - `src/themes.js` / `src/storage.js` — thèmes de couleur (CSS custom properties) et persistance `localStorage`.
@@ -23,7 +25,10 @@ App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette
 
 ## Tester sans manette physique
 
-Pour valider une fonctionnalité visuellement sans manette branchée : lancer `npm run dev`, ouvrir la page dans le navigateur (claude-in-chrome), puis injecter un faux `navigator.getGamepads` via `javascript_tool` pour simuler boutons/axes. Vérifier ensuite par capture d'écran/zoom plutôt que de supposer que le rendu est correct.
+Pour valider une fonctionnalité visuellement sans manette branchée : lancer `npm run dev`, ouvrir la page dans le navigateur (claude-in-chrome), puis injecter un faux `navigator.getGamepads` pour simuler boutons/axes. Vérifier ensuite par capture d'écran/zoom plutôt que de supposer que le rendu est correct.
+- Injecter via un `<script>` ajouté au DOM (`document.documentElement.appendChild`), pas directement via `javascript_tool` : ce dernier peut s'exécuter dans un contexte isolé qui ne modifie pas le `navigator` vu par l'app.
+- L'onglet doit rester visible/au premier plan : Chrome gèle `requestAnimationFrame` (donc toute la boucle de l'app) sur un onglet en arrière-plan, ce qui peut faire croire à un bug alors que c'est juste l'onglet qui a perdu le focus.
+- Pour des trackers basés sur le temps (fenêtres glissantes, hystérésis), valider la logique isolément avec un petit script Node qui importe `gamepad.js` directement et simule des appels `update()` à pas de temps fixe, plutôt que de se fier uniquement au rendu navigateur (plus rapide, et insensible aux problèmes de focus d'onglet ci-dessus).
 
 ## Git
 
