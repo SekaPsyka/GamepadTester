@@ -1191,6 +1191,7 @@ let lastPadId = null;
 
 let chatterTotal = 0;
 const chatterByButton = new Map();
+const pressCountByButton = new Map();
 const chatterCountEl = document.getElementById("chatterCount");
 
 function buildDiagnosticReport() {
@@ -1218,7 +1219,7 @@ function buildDiagnosticReport() {
     },
     chatterEventsTotal: chatterTotal,
     chatterByButton: [...chatterByButton.entries()]
-      .map(([label, count]) => ({ label, count }))
+      .map(([label, count]) => ({ label, count, pressCount: pressCountByButton.get(label) || count }))
       .sort((a, b) => b.count - a.count),
     wiredVsWirelessComparison: compareSnapshots,
     mashTest: lastMashResults
@@ -1291,7 +1292,8 @@ function computeDiagnosticVerdict(report) {
     items.push({ status: "ok", title: "Chatter", text: "Aucun événement de chatter détecté." });
   } else {
     const worst = report.chatterByButton[0];
-    const detail = worst ? ` Bouton le plus touché: ${worst.label} (${worst.count} fois).` : "";
+    const rate = worst ? Math.round((worst.count / worst.pressCount) * 100) : 0;
+    const detail = worst ? ` Bouton le plus touché: ${worst.label} (${worst.count} fois sur ${worst.pressCount} appuis, soit ${rate}%).` : "";
     items.push({
       status: report.chatterEventsTotal >= 5 ? "bad" : "warn",
       title: "Chatter",
@@ -1303,7 +1305,7 @@ function computeDiagnosticVerdict(report) {
     items.push({
       status: "neutral",
       title: "Diagnostic des boutons",
-      text: "Aucun test de mashing effectué, chatter et boutons lents non vérifiés bouton par bouton.",
+      text: "Aucun test de mashing effectué, chatter et boutons lents non vérifiés bouton par bouton. Lancez le diagnostic des boutons depuis l'application pour fiabiliser ce point.",
     });
   } else {
     const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
@@ -1329,10 +1331,10 @@ function computeDiagnosticVerdict(report) {
 const PDF_MARGIN = 15;
 const PDF_PAGE_WIDTH = 210;
 const PDF_CONTENT_WIDTH = PDF_PAGE_WIDTH - PDF_MARGIN * 2;
-const PDF_CYAN = [0, 130, 150];
-const PDF_MAGENTA = [70, 75, 90];
 const PDF_DARK = [30, 32, 40];
 const PDF_MUTED = [110, 110, 110];
+const PDF_LABEL = [85, 87, 95];
+const PDF_HAIRLINE = [188, 191, 199];
 const PDF_GRADE_STATUS = { excellent: "ok", good: "ok", fair: "warn", poor: "bad", na: "neutral" };
 const PDF_STATUS_COLORS = {
   ok: [30, 150, 90],
@@ -1341,140 +1343,289 @@ const PDF_STATUS_COLORS = {
   neutral: [140, 140, 140],
 };
 const PDF_STATUS_LABELS = { ok: "OK", warn: "ATTENTION", bad: "PROBLÈME", neutral: "N/A" };
+// Glyphes ASCII uniquement: les polices de base de jsPDF (WinAnsi) n'incluent pas ✓/✕.
+const PDF_STATUS_GLYPHS = { ok: "+", warn: "!", bad: "x", neutral: "-" };
+
+function hexToRgb(hex) {
+  const value = hex.replace("#", "");
+  return [parseInt(value.slice(0, 2), 16), parseInt(value.slice(2, 4), 16), parseInt(value.slice(4, 6), 16)];
+}
+
+// Les couleurs de thème sont des néons saturés (ex: cyan, ambre) qui ne garantissent pas
+// un contraste correct avec du texte blanc fixe: on choisit la couleur de texte selon la
+// luminance perçue plutôt que de supposer que "couleur vive = texte blanc lisible".
+function textColorForBackground([r, g, b]) {
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? [20, 20, 25] : [255, 255, 255];
+}
+
+function slugify(text) {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
 
 function pdfEnsureSpace(doc, y, needed) {
-  if (y + needed > 280) {
+  if (y + needed > 278) {
     doc.addPage();
     return 18;
   }
   return y;
 }
 
-function pdfSectionHeader(doc, title, y, color) {
-  y = pdfEnsureSpace(doc, y, 16);
-  doc.setFillColor(...color);
-  doc.rect(PDF_MARGIN, y, PDF_CONTENT_WIDTH, 8, "F");
+// En-tête de section "discret": une fine barre d'accent + libellé tracké, plutôt qu'un
+// bandeau plein qui donnait le même poids visuel à chaque section du rapport.
+function pdfPanelHeader(doc, title, y, accent) {
+  y = pdfEnsureSpace(doc, y, 14);
+  doc.setFillColor(...accent);
+  doc.rect(PDF_MARGIN, y, 1.2, 6, "F");
+  doc.setTextColor(...PDF_DARK);
+  doc.setFont(undefined, "bold");
+  doc.setFontSize(10.5);
+  doc.text(title.toUpperCase(), PDF_MARGIN + 4, y + 4.6, { charSpace: 0.3 });
+  doc.setFont(undefined, "normal");
+  return y + 6 + 6;
+}
+
+function pdfDivider(doc, y) {
+  doc.setDrawColor(...PDF_HAIRLINE);
+  doc.setLineWidth(0.2);
+  doc.line(PDF_MARGIN, y, PDF_PAGE_WIDTH - PDF_MARGIN, y);
+  return y + 7;
+}
+
+// Clin d'œil discret à l'objet du rapport: un badge carré arrondi façon bouton de
+// manette, plutôt qu'une simple puce de couleur, pour marquer chaque verdict.
+function pdfStatusChip(doc, status, x, y) {
+  doc.setFillColor(...PDF_STATUS_COLORS[status]);
+  doc.roundedRect(x, y, 4.2, 4.2, 1, 1, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont(undefined, "bold");
-  doc.setFontSize(11);
-  doc.text(title, PDF_MARGIN + 3, y + 5.5);
-  doc.setFont(undefined, "normal");
-  return y + 8 + 5;
+  doc.setFontSize(7);
+  doc.text(PDF_STATUS_GLYPHS[status], x + 2.1, y + 3, { align: "center" });
 }
 
 function pdfVerdictRow(doc, item, y) {
-  const color = PDF_STATUS_COLORS[item.status];
-  const lines = doc.splitTextToSize(item.text, PDF_CONTENT_WIDTH - 28);
-  y = pdfEnsureSpace(doc, y, lines.length * 4.5 + 6);
+  const lines = doc.splitTextToSize(item.text, PDF_CONTENT_WIDTH - 10);
+  y = pdfEnsureSpace(doc, y, lines.length * 4.3 + 7);
 
-  doc.setFillColor(...color);
-  doc.circle(PDF_MARGIN + 2, y + 1, 1.3, "F");
+  pdfStatusChip(doc, item.status, PDF_MARGIN, y);
 
-  doc.setFontSize(9.5);
   doc.setFont(undefined, "bold");
-  doc.setTextColor(...color);
-  doc.text(`${item.title} : ${PDF_STATUS_LABELS[item.status]}`, PDF_MARGIN + 6, y + 2);
-  y += 5;
+  doc.setFontSize(9.5);
+  doc.setTextColor(...PDF_DARK);
+  doc.text(item.title, PDF_MARGIN + 7, y + 3.2);
+  const titleWidth = doc.getTextWidth(item.title);
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...PDF_STATUS_COLORS[item.status]);
+  doc.text(PDF_STATUS_LABELS[item.status], PDF_MARGIN + 7 + titleWidth + 3, y + 3.2);
+  y += 5.5;
 
+  doc.setFontSize(9);
   doc.setFont(undefined, "normal");
   doc.setTextColor(...PDF_DARK);
-  doc.text(lines, PDF_MARGIN + 6, y);
-  y += lines.length * 4.5 + 3;
+  doc.text(lines, PDF_MARGIN + 7, y);
+  y += lines.length * 4.3 + 4;
   return y;
+}
+
+// Carte "instrument": grande valeur en police mono (comme les lectures brutes affichées
+// à l'écran dans l'app) + libellé tracké, pour une lecture immédiate sans avoir à lire
+// de phrases. Une fine bande de couleur en haut porte le statut (ok/attention/problème).
+function pdfKpiCard(doc, x, y, w, h, { label, value, status }) {
+  doc.setDrawColor(...PDF_HAIRLINE);
+  doc.setLineWidth(0.45);
+  doc.roundedRect(x, y, w, h, 1.5, 1.5, "S");
+  doc.setFillColor(...PDF_STATUS_COLORS[status]);
+  doc.rect(x + 0.6, y, w - 1.2, 1.3, "F");
+
+  doc.setFont("courier", "bold");
+  doc.setFontSize(12.5);
+  doc.setTextColor(...PDF_DARK);
+  doc.text(value, x + w / 2, y + h / 2 + 0.5, { align: "center" });
+
+  doc.setFont(undefined, "bold");
+  doc.setFontSize(7.2);
+  doc.setTextColor(...PDF_LABEL);
+  doc.text(label.toUpperCase(), x + w / 2, y + h - 3.2, { align: "center", charSpace: 0.15 });
 }
 
 function buildDiagnosticPdf(report) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  let y = 18;
 
-  doc.setFontSize(18);
+  // Couleur d'accent alignée sur le thème actif au moment de l'export, pour que le rapport
+  // PDF reste visuellement rattaché à l'application plutôt que d'imposer une charte fixe.
+  // Réservée à la couverture, aux libellés de section et aux en-têtes de tableau: les
+  // statuts (ok/attention/problème) restent des couleurs sémantiques fixes, jamais teintées.
+  const activeTheme = THEMES[getTheme()] || THEMES.cyan;
+  const PDF_ACCENT = hexToRgb(activeTheme.accent);
+  const PDF_ACCENT_TEXT = textColorForBackground(PDF_ACCENT);
+
+  const titleText = report.gamepad ? `Rapport de diagnostic — ${report.gamepad.id}` : "Rapport de diagnostic manette";
   doc.setFont(undefined, "bold");
-  doc.setTextColor(...PDF_DARK);
-  doc.text("Gamepad Diagnostic Report", PDF_MARGIN, y);
+  doc.setFontSize(17);
+  const titleLines = doc.splitTextToSize(titleText, PDF_CONTENT_WIDTH);
+  const coverHeight = 12 + titleLines.length * 7 + 9;
+  doc.setFillColor(...PDF_ACCENT);
+  doc.rect(0, 0, PDF_PAGE_WIDTH, coverHeight, "F");
+  doc.setTextColor(...PDF_ACCENT_TEXT);
+  doc.text(titleLines, PDF_MARGIN, 11);
   doc.setFont(undefined, "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(...PDF_MUTED);
-  y += 6;
-  doc.text(`Généré le ${new Date(report.generatedAt).toLocaleString()}`, PDF_MARGIN, y);
-  y += 10;
+  doc.setFontSize(9.5);
+  doc.text(`Généré le ${new Date(report.generatedAt).toLocaleString("fr-FR")}`, PDF_MARGIN, 11 + titleLines.length * 7 + 5);
+  let y = coverHeight + 10;
 
-  y = pdfSectionHeader(doc, "Résumé du diagnostic", y, PDF_MAGENTA);
-  for (const item of computeDiagnosticVerdict(report)) {
+  const verdictItems = computeDiagnosticVerdict(report);
+
+  let latencyValue = "N/A";
+  let latencyStatus = "neutral";
+  if (report.latency.averageMs != null && report.latency.sampleCount >= 5) {
+    latencyValue = `${report.latency.averageMs} ms`;
+    latencyStatus = report.latency.averageMs <= 20 ? "ok" : report.latency.averageMs <= 40 ? "warn" : "bad";
+  }
+
+  const chatterValue = String(report.chatterEventsTotal);
+  const chatterStatus = report.chatterEventsTotal === 0 ? "ok" : report.chatterEventsTotal >= 5 ? "bad" : "warn";
+
+  let mashValue = "N/A";
+  let mashStatus = "neutral";
+  if (report.mashTest && report.mashTest.length) {
+    const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
+    const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
+    const overallGrade = gradeForChatter(totalChatter, totalPressCount);
+    mashValue = overallGrade.label;
+    mashStatus = PDF_GRADE_STATUS[overallGrade.key];
+  }
+
+  const hasBadVerdict = verdictItems.some((i) => i.status === "bad");
+  const hasWarnVerdict = verdictItems.some((i) => i.status === "warn");
+  const globalStatus = hasBadVerdict ? "bad" : hasWarnVerdict ? "warn" : "ok";
+  const globalValue = hasBadVerdict ? "Problème" : hasWarnVerdict ? "Attention" : "Bon état";
+
+  y = pdfEnsureSpace(doc, y, 26);
+  const kpis = [
+    { label: "Latence moyenne", value: latencyValue, status: latencyStatus },
+    { label: "Chatter détecté", value: chatterValue, status: chatterStatus },
+    { label: "Fiabilité boutons", value: mashValue, status: mashStatus },
+    { label: "Verdict global", value: globalValue, status: globalStatus },
+  ];
+  const kpiGap = 4;
+  const kpiWidth = (PDF_CONTENT_WIDTH - kpiGap * (kpis.length - 1)) / kpis.length;
+  const kpiHeight = 22;
+  kpis.forEach((kpi, i) => pdfKpiCard(doc, PDF_MARGIN + i * (kpiWidth + kpiGap), y, kpiWidth, kpiHeight, kpi));
+  y += kpiHeight + 10;
+
+  y = pdfEnsureSpace(doc, y, 24);
+  y = pdfPanelHeader(doc, "Résumé du diagnostic", y, PDF_ACCENT);
+  for (const item of verdictItems) {
     y = pdfVerdictRow(doc, item, y);
   }
-  y += 5;
+  y = pdfDivider(doc, y + 2);
 
-  y = pdfSectionHeader(doc, "Manette", y, PDF_CYAN);
-  doc.setFontSize(10);
+  y = pdfEnsureSpace(doc, y, 36);
+  y = pdfPanelHeader(doc, "Manette & zones mortes", y, PDF_ACCENT);
+  doc.setFontSize(9.5);
   doc.setTextColor(...PDF_DARK);
   if (report.gamepad) {
-    doc.text(`Nom: ${report.gamepad.id}`, PDF_MARGIN + 2, y);
-    y += 5;
+    doc.setFont(undefined, "bold");
+    doc.text("Nom", PDF_MARGIN + 2, y);
+    doc.setFont(undefined, "normal");
+    doc.text(report.gamepad.id, PDF_MARGIN + 18, y);
+    y += 5.5;
+    doc.setFont(undefined, "bold");
+    doc.text("Mapping", PDF_MARGIN + 2, y);
+    doc.setFont(undefined, "normal");
     doc.text(
-      `Mapping détecté: ${report.gamepad.mappingType}, ${report.gamepad.buttonCount} boutons, ${report.gamepad.axisCount} axes`,
-      PDF_MARGIN + 2,
+      `${report.gamepad.mappingType} · ${report.gamepad.buttonCount} boutons · ${report.gamepad.axisCount} axes`,
+      PDF_MARGIN + 18,
       y
     );
-    y += 10;
+    y += 7;
   } else {
     doc.text("Aucune manette connectée au moment de l'export.", PDF_MARGIN + 2, y);
-    y += 10;
+    y += 7;
   }
-
-  y = pdfSectionHeader(doc, "Dead Zones", y, PDF_CYAN);
   autoTable(doc, {
     startY: y,
     margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-    head: [["Stick", "Inner", "Outer"]],
+    head: [["Stick", "Dead zone intérieure", "Dead zone extérieure"]],
     body: [
       ["Gauche", report.deadzones.left.inner.toFixed(2), report.deadzones.left.outer.toFixed(2)],
       ["Droit", report.deadzones.right.inner.toFixed(2), report.deadzones.right.outer.toFixed(2)],
     ],
     theme: "grid",
-    headStyles: { fillColor: PDF_CYAN, textColor: 255 },
-    styles: { fontSize: 10, textColor: PDF_DARK },
+    headStyles: { fillColor: PDF_ACCENT, textColor: PDF_ACCENT_TEXT, fontSize: 9 },
+    styles: { fontSize: 9.5, textColor: PDF_DARK },
+    columnStyles: {
+      1: { font: "courier", halign: "right" },
+      2: { font: "courier", halign: "right" },
+    },
   });
-  y = doc.lastAutoTable.finalY + 10;
+  y = pdfDivider(doc, doc.lastAutoTable.finalY + 8);
 
-  y = pdfSectionHeader(doc, "Calibration de range", y, PDF_MAGENTA);
-  doc.setFontSize(10);
-  doc.setTextColor(...PDF_DARK);
-  for (const [label, text] of [
-    ["Gauche", report.calibration.left || "Aucune calibration effectuée."],
-    ["Droit", report.calibration.right || "Aucune calibration effectuée."],
-  ]) {
+  y = pdfEnsureSpace(doc, y, 52);
+  y = pdfPanelHeader(doc, "Sticks — calibration & point neutre", y, PDF_ACCENT);
+  const colGap = 6;
+  const colWidth = (PDF_CONTENT_WIDTH - colGap) / 2;
+  const sides = [
+    { key: "left", label: "Gauche", x: PDF_MARGIN },
+    { key: "right", label: "Droit", x: PDF_MARGIN + colWidth + colGap },
+  ];
+  const sticksStartY = y;
+  let sticksEndY = y;
+  for (const side of sides) {
+    let cy = sticksStartY;
     doc.setFont(undefined, "bold");
-    doc.text(`${label}:`, PDF_MARGIN + 2, y);
+    doc.setFontSize(9);
+    doc.setTextColor(...PDF_DARK);
+    doc.text(side.label.toUpperCase(), side.x, cy, { charSpace: 0.2 });
+    cy += 5;
+
     doc.setFont(undefined, "normal");
-    const lines = doc.splitTextToSize(text, PDF_CONTENT_WIDTH - 4);
-    y = pdfEnsureSpace(doc, y, lines.length * 5 + 8);
-    doc.text(lines, PDF_MARGIN + 2, y + 5);
-    y += lines.length * 5 + 8;
-  }
+    doc.setFontSize(8.5);
+    doc.setTextColor(...PDF_DARK);
+    const calibText = report.calibration[side.key] || "Aucune calibration effectuée.";
+    const calibLines = doc.splitTextToSize(calibText, colWidth);
+    doc.text(calibLines, side.x, cy);
+    cy += calibLines.length * 4 + 4;
 
-  y = pdfSectionHeader(doc, "Point neutre des sticks", y, PDF_MAGENTA);
-  doc.setFontSize(10);
-  doc.setTextColor(...PDF_DARK);
-  for (const [label, offset] of [
-    ["Gauche", report.neutralDrift.left],
-    ["Droit", report.neutralDrift.right],
-  ]) {
-    const text = offset.measured
-      ? `${label}: ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)}${offset.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD ? " (décalé, drift naissant possible)" : " (centré)"}`
-      : `${label}: pas encore mesuré.`;
-    doc.text(text, PDF_MARGIN + 2, y);
-    y += 5;
-  }
-  y += 5;
+    const offset = report.neutralDrift[side.key];
+    const drifted = offset.measured && offset.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD;
+    const neutralText = offset.measured
+      ? `Point neutre: ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)} ${drifted ? "(décalé)" : "(centré)"}`
+      : "Point neutre: pas encore mesuré.";
+    const neutralLines = doc.splitTextToSize(neutralText, colWidth);
+    doc.setFont("courier", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...(drifted ? PDF_STATUS_COLORS.warn : PDF_MUTED));
+    doc.text(neutralLines, side.x, cy);
+    cy += neutralLines.length * 4 + 2;
 
-  y = pdfSectionHeader(doc, "Latence & Chatter", y, PDF_MAGENTA);
-  doc.setFontSize(10);
+    sticksEndY = Math.max(sticksEndY, cy);
+  }
+  doc.setFont(undefined, "normal");
+  y = pdfDivider(doc, sticksEndY + 3);
+
+  y = pdfEnsureSpace(doc, y, 32);
+  y = pdfPanelHeader(doc, "Latence & chatter", y, PDF_ACCENT);
+  doc.setFontSize(9.5);
   doc.setTextColor(...PDF_DARK);
+  doc.setFont(undefined, "bold");
+  doc.text("Latence moyenne", PDF_MARGIN + 2, y);
+  doc.setFont("courier", "normal");
   const avgText =
-    report.latency.averageMs != null ? `${report.latency.averageMs} ms (${report.latency.sampleCount} échantillons)` : "n/a";
-  doc.text(`Latence moyenne: ${avgText}`, PDF_MARGIN + 2, y);
-  y += 5;
-  doc.text(`Événements de chatter détectés: ${report.chatterEventsTotal}`, PDF_MARGIN + 2, y);
+    report.latency.averageMs != null ? `${report.latency.averageMs} ms (${report.latency.sampleCount} éch.)` : "n/a";
+  doc.text(avgText, PDF_MARGIN + 40, y);
+  y += 5.5;
+  doc.setFont(undefined, "bold");
+  doc.text("Chatter détecté", PDF_MARGIN + 2, y);
+  doc.setFont("courier", "normal");
+  doc.text(`${report.chatterEventsTotal} événement(s)`, PDF_MARGIN + 40, y);
+  doc.setFont(undefined, "normal");
   y += 8;
 
   if (report.chatterByButton.length > 0) {
@@ -1482,24 +1633,35 @@ function buildDiagnosticPdf(report) {
     autoTable(doc, {
       startY: y,
       margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-      head: [["Bouton", "Événements de chatter"]],
-      body: report.chatterByButton.map((b) => [b.label, String(b.count)]),
+      head: [["Bouton", "Appuis", "Chatter", "Taux"]],
+      body: report.chatterByButton.map((b) => [
+        b.label,
+        String(b.pressCount),
+        String(b.count),
+        `${Math.round((b.count / b.pressCount) * 100)}%`,
+      ]),
       theme: "grid",
-      headStyles: { fillColor: PDF_MAGENTA, textColor: 255 },
+      headStyles: { fillColor: PDF_DARK, textColor: 255, fontSize: 9 },
       styles: { fontSize: 9, textColor: PDF_DARK },
+      columnStyles: {
+        1: { font: "courier", halign: "right" },
+        2: { font: "courier", halign: "right" },
+        3: { font: "courier", halign: "right" },
+      },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 8;
   } else {
     y += 2;
   }
+  y = pdfDivider(doc, y);
 
-  y = pdfSectionHeader(doc, "Diagnostic des boutons (mashing)", y, PDF_MAGENTA);
+  y = pdfEnsureSpace(doc, y, 30);
+  y = pdfPanelHeader(doc, "Diagnostic des boutons (mashing)", y, PDF_ACCENT);
   if (report.mashTest && report.mashTest.length) {
     const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
     const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
     const overallGrade = gradeForChatter(totalChatter, totalPressCount);
-    doc.setFontSize(10);
-    doc.setTextColor(...PDF_DARK);
+    doc.setFontSize(9.5);
     doc.setTextColor(...PDF_STATUS_COLORS[PDF_GRADE_STATUS[overallGrade.key]]);
     doc.setFont(undefined, "bold");
     doc.text(`Fiabilité globale: ${overallGrade.label} (${totalChatter} chatter sur ${totalPressCount} appuis)`, PDF_MARGIN + 2, y);
@@ -1519,8 +1681,13 @@ function buildDiagnosticPdf(report) {
         r.reliable === false ? `${mashGrades[i].label} (*)` : mashGrades[i].label,
       ]),
       theme: "grid",
-      headStyles: { fillColor: PDF_MAGENTA, textColor: 255 },
+      headStyles: { fillColor: PDF_DARK, textColor: 255, fontSize: 9 },
       styles: { fontSize: 9, textColor: PDF_DARK },
+      columnStyles: {
+        1: { font: "courier", halign: "right" },
+        2: { font: "courier", halign: "right" },
+        3: { font: "courier", halign: "right" },
+      },
       didParseCell: (data) => {
         if (data.section === "body" && data.column.index === 4) {
           data.cell.styles.textColor = PDF_STATUS_COLORS[PDF_GRADE_STATUS[mashGrades[data.row.index].key]];
@@ -1548,15 +1715,21 @@ function buildDiagnosticPdf(report) {
     doc.text(verdictLines, PDF_MARGIN + 2, y);
     doc.setFont(undefined, "normal");
     doc.setTextColor(...PDF_DARK);
-    y += verdictLines.length * 4.5 + 10;
+    y += verdictLines.length * 4.5 + 8;
   } else {
-    doc.setFontSize(10);
+    doc.setFontSize(9.5);
     doc.setTextColor(...PDF_DARK);
-    doc.text("Aucun test de réactivité effectué.", PDF_MARGIN + 2, y);
-    y += 10;
+    const lines = doc.splitTextToSize(
+      "Aucun test de réactivité (mashing) effectué avant l'export. Lancez le diagnostic des boutons depuis l'application pour fiabiliser ce point du rapport.",
+      PDF_CONTENT_WIDTH - 4,
+    );
+    doc.text(lines, PDF_MARGIN + 2, y);
+    y += lines.length * 5 + 6;
   }
+  y = pdfDivider(doc, y);
 
-  y = pdfSectionHeader(doc, "Comparaison filaire / sans-fil", y, PDF_CYAN);
+  y = pdfEnsureSpace(doc, y, 28);
+  y = pdfPanelHeader(doc, "Comparaison filaire / sans-fil", y, PDF_ACCENT);
   const { wired, wireless } = report.wiredVsWirelessComparison;
   if (wired || wireless) {
     autoTable(doc, {
@@ -1578,27 +1751,38 @@ function buildDiagnosticPdf(report) {
           : ["Sans-fil", "n/a", "n/a", "n/a", "n/a"],
       ],
       theme: "grid",
-      headStyles: { fillColor: PDF_CYAN, textColor: 255 },
+      headStyles: { fillColor: PDF_ACCENT, textColor: PDF_ACCENT_TEXT, fontSize: 9 },
       styles: { fontSize: 9, textColor: PDF_DARK },
+      columnStyles: {
+        2: { font: "courier", halign: "right" },
+        3: { font: "courier", halign: "right" },
+      },
     });
     y = doc.lastAutoTable.finalY + 6;
     if (wired && wireless) {
       const delta = wireless.avgLatencyMs - wired.avgLatencyMs;
       const sign = delta >= 0 ? "+" : "";
-      doc.setFontSize(10);
+      doc.setFontSize(9.5);
+      doc.setFont(undefined, "bold");
       doc.setTextColor(...PDF_DARK);
-      doc.text(`Écart sans-fil vs filaire: ${sign}${delta.toFixed(1)} ms`, PDF_MARGIN + 2, y);
+      doc.text("Écart sans-fil vs filaire", PDF_MARGIN + 2, y);
+      doc.setFont("courier", "normal");
+      doc.text(`${sign}${delta.toFixed(1)} ms`, PDF_MARGIN + 50, y);
+      doc.setFont(undefined, "normal");
+      y += 4;
     }
   } else {
-    doc.setFontSize(10);
+    doc.setFontSize(9.5);
     doc.setTextColor(...PDF_DARK);
     doc.text("Aucune capture effectuée.", PDF_MARGIN + 2, y);
-    y += 10;
+    y += 6;
   }
+  y = pdfDivider(doc, y + 4);
 
-  y = pdfSectionHeader(doc, "Limites de ce diagnostic", y, PDF_DARK);
-  doc.setFontSize(9);
-  doc.setTextColor(...PDF_DARK);
+  y = pdfEnsureSpace(doc, y, 28);
+  y = pdfPanelHeader(doc, "Limites de ce diagnostic", y, PDF_MUTED);
+  doc.setFontSize(8.5);
+  doc.setTextColor(...PDF_MUTED);
   const limitsLines = doc.splitTextToSize(
     "Ce rapport dépend du navigateur et du système utilisés (fréquence de lecture de la manette, throttling d'un onglet en arrière-plan, pilote...). " +
       "Il donne une bonne indication de l'état de la manette mais ne remplace pas un diagnostic matériel certifié. " +
@@ -1607,13 +1791,24 @@ function buildDiagnosticPdf(report) {
   );
   doc.text(limitsLines, PDF_MARGIN + 2, y);
 
+  const totalPages = doc.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page++) {
+    doc.setPage(page);
+    doc.setFontSize(8);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(...PDF_MUTED);
+    doc.text("Gamepad Tester", PDF_MARGIN, 291);
+    doc.text(`Page ${page} / ${totalPages}`, PDF_PAGE_WIDTH - PDF_MARGIN, 291, { align: "right" });
+  }
+
   return doc;
 }
 
 document.getElementById("exportReportBtn").addEventListener("click", () => {
   const report = buildDiagnosticReport();
   const doc = buildDiagnosticPdf(report);
-  doc.save(`gamepad-report-${new Date().toISOString().replace(/[:.]/g, "-")}.pdf`);
+  const padSlug = report.gamepad ? slugify(report.gamepad.id).slice(0, 40) : "sans-manette";
+  doc.save(`gamepad-report-${padSlug}-${new Date().toISOString().replace(/[:.]/g, "-")}.pdf`);
 });
 
 document.getElementById("resetDataBtn").addEventListener("click", () => {
@@ -1627,6 +1822,7 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
 
   chatterTotal = 0;
   chatterByButton.clear();
+  pressCountByButton.clear();
   chatterCountEl.textContent = "0";
   prevButtonStates = [];
   lastReleaseTimes = [];
@@ -1771,6 +1967,7 @@ function loop() {
       if (pressed && !wasPressed) {
         const latency = Number.isFinite(pad.timestamp) && pad.timestamp > 0 ? now - pad.timestamp : null;
         const label = currentLabels[i] || `Bouton ${i}`;
+        pressCountByButton.set(label, (pressCountByButton.get(label) || 0) + 1);
         const sinceRelease = lastReleaseTimes[i];
         if (sinceRelease != null && eventTime - sinceRelease < CHATTER_THRESHOLD_MS) {
           chatterTotal++;
