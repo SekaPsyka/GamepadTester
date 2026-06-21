@@ -162,10 +162,20 @@ app.innerHTML = `
       <p class="note" title="Chatter: un bouton se déclenche plusieurs fois pour une seule pression physique, souvent dû à l'usure d'un switch/contact.">Le chatter est détecté quand un bouton se relâche puis se ré-enfonce en moins de 60 ms, trop rapide pour une vraie double-pression humaine.</p>
     </section>
 
-    <section class="panel span-2">
+    <section class="panel span-2 press-history-panel">
       <h2>Historique des appuis</h2>
-      <div id="pressLog" class="press-log"></div>
-      <p class="note">Dernières 20 entrées, avec latence détectée (delta entre le timestamp matériel de la manette et la réception navigateur, si supporté).</p>
+      <div class="press-log-frame">
+        <div class="press-log-columns" aria-hidden="true">
+          <span>Heure</span>
+          <span>Bouton</span>
+          <span class="press-log-heading-value">Valeur</span>
+          <span class="press-log-heading-interval">Depuis précédent</span>
+          <span>Latence</span>
+          <span>Diagnostic</span>
+        </div>
+        <div id="pressLog" class="press-log" role="log" aria-live="polite" aria-label="Historique des dix derniers appuis"></div>
+      </div>
+      <p class="note">10 derniers appuis, avec latence détectée (delta entre le timestamp matériel de la manette et la réception navigateur, si supporté).</p>
     </section>
 
     <section class="panel span-2 latency-panel">
@@ -900,16 +910,44 @@ document.getElementById("mashCloseBtn").addEventListener("click", closeMashOverl
 
 const pressLog = document.getElementById("pressLog");
 const avgLatencyEl = document.getElementById("avgLatency");
+const PRESS_LOG_LIMIT = 10;
 const latencySamples = [];
 let currentAvgLatencyMs = null;
+let lastLoggedPressAt = null;
 
-function logPress(label, latencyMs) {
+function logPress(label, latencyMs, { value, eventTime, chatterDelayMs = null }) {
   const entry = document.createElement("div");
-  const time = new Date().toLocaleTimeString();
+  const time = new Date().toLocaleTimeString("fr-FR", { hour12: false });
+  const timeEl = document.createElement("time");
+  const labelEl = document.createElement("span");
+  const valueEl = document.createElement("span");
+  const intervalEl = document.createElement("span");
+  const latencyEl = document.createElement("span");
+  const statusEl = document.createElement("span");
+  const intervalMs = lastLoggedPressAt == null ? null : eventTime - lastLoggedPressAt;
+  lastLoggedPressAt = eventTime;
+
   entry.className = "press-log-entry";
-  entry.textContent = latencyMs != null ? `[${time}] ${label} (latence ~${latencyMs.toFixed(1)} ms)` : `[${time}] ${label}`;
+  timeEl.className = "press-log-time";
+  timeEl.textContent = time;
+  labelEl.className = "press-log-button";
+  labelEl.textContent = label;
+  labelEl.title = label;
+  valueEl.className = "press-log-value";
+  valueEl.textContent = `${Math.round(value * 100)} %`;
+  intervalEl.className = "press-log-interval";
+  intervalEl.textContent = intervalMs == null ? "—" : intervalMs < 1000 ? `+${intervalMs.toFixed(0)} ms` : `+${(intervalMs / 1000).toFixed(1)} s`;
+  latencyEl.className = "press-log-latency";
+  latencyEl.textContent = chatterDelayMs != null ? "—" : latencyMs != null ? `~${latencyMs.toFixed(1)} ms` : "n/d";
+  statusEl.className = "press-log-status";
+  statusEl.textContent = chatterDelayMs != null ? "Chatter" : "Normal";
+  if (chatterDelayMs != null) {
+    entry.classList.add("is-chatter");
+    statusEl.title = `Ré-appui ${chatterDelayMs.toFixed(1)} ms après relâche`;
+  }
+  entry.append(timeEl, labelEl, valueEl, intervalEl, latencyEl, statusEl);
   pressLog.prepend(entry);
-  while (pressLog.children.length > 20) pressLog.removeChild(pressLog.lastChild);
+  while (pressLog.children.length > PRESS_LOG_LIMIT) pressLog.removeChild(pressLog.lastChild);
 
   if (compareCapture && compareCapture.endAt == null) beginCompareCountdown();
 
@@ -1592,6 +1630,7 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
   driftHistoryRight.fill(0);
 
   pressLog.innerHTML = "";
+  lastLoggedPressAt = null;
 
   compareCapture = null;
   setCompareButtonsDisabled(false);
@@ -1732,13 +1771,13 @@ function loop() {
           chatterTotal++;
           chatterByButton.set(label, (chatterByButton.get(label) || 0) + 1);
           chatterCountEl.textContent = chatterTotal;
-          logPress(`⚠ Chatter : ${label} re-déclenché ${(eventTime - sinceRelease).toFixed(1)} ms après relâche`, null);
+          logPress(label, null, { value: btn.value, eventTime, chatterDelayMs: eventTime - sinceRelease });
           if (cell) {
             cell.classList.add("chatter");
             setTimeout(() => cell.classList.remove("chatter"), 400);
           }
         } else {
-          logPress(label, latency);
+          logPress(label, latency, { value: btn.value, eventTime });
         }
       }
       if (!pressed && wasPressed) {

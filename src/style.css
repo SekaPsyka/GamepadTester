@@ -554,25 +554,127 @@ select option {
 
 .span-2 { grid-column: 1 / -1; }
 
-.press-log {
-  max-height: 220px;
-  overflow-y: auto;
+.press-log-frame {
+  height: 228px;
+  overflow: hidden;
   background: #060710;
   border: 1px solid var(--panel-border);
   border-radius: 8px;
-  padding: 8px 12px;
   font-family: "Consolas", monospace;
   font-size: 12px;
 }
 
+.press-log-columns,
+.press-log-entry {
+  display: grid;
+  grid-template-columns: 8ch minmax(120px, 1.5fr) minmax(70px, 0.55fr) minmax(105px, 0.8fr) minmax(90px, 0.7fr) minmax(100px, 0.85fr);
+  column-gap: clamp(12px, 2vw, 32px);
+  align-items: center;
+}
+
+.press-log-columns {
+  height: 26px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.press-log-columns span:nth-child(n + 3) {
+  text-align: right;
+}
+
+.press-log {
+  height: 200px;
+  overflow: hidden;
+  padding: 0 12px;
+}
+
+.press-log:empty::before {
+  content: "En attente d’un appui…";
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: var(--text-dim);
+}
+
 .press-log-entry {
   color: var(--text-dim);
-  padding: 3px 0;
+  padding: 2px 0;
   border-bottom: 1px solid #14172380;
+  line-height: 15px;
+}
+
+.press-log-time,
+.press-log-value,
+.press-log-interval,
+.press-log-latency {
+  font-variant-numeric: tabular-nums;
+}
+
+.press-log-button {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.press-log-value,
+.press-log-interval,
+.press-log-latency {
+  text-align: right;
+}
+
+.press-log-status {
+  justify-self: end;
+  min-width: 62px;
+  padding: 1px 7px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 9px;
+  line-height: 11px;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .press-log-entry:first-child {
+  box-shadow: -12px 0 0 -10px var(--accent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 45%);
+}
+
+.press-log-entry:first-child .press-log-button {
   color: var(--accent);
+}
+
+.press-log-entry.is-chatter .press-log-button {
+  color: var(--text);
+}
+
+.press-log-entry.is-chatter .press-log-status {
+  border-color: color-mix(in srgb, var(--accent-alt) 45%, transparent);
+  color: color-mix(in srgb, var(--accent-alt) 75%, var(--text));
+}
+
+.press-log-entry.is-chatter:first-child {
+  box-shadow: -12px 0 0 -10px var(--accent-alt);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent-alt) 8%, transparent), transparent 45%);
+}
+
+@media (max-width: 720px) {
+  .press-log-columns,
+  .press-log-entry {
+    grid-template-columns: 7ch minmax(0, 1fr) 10ch 9ch;
+    column-gap: 8px;
+  }
+
+  .press-log-heading-value,
+  .press-log-heading-interval,
+  .press-log-value,
+  .press-log-interval {
+    display: none;
+  }
 }
 
 .note {
