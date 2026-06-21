@@ -1032,8 +1032,10 @@ select option {
   inset: 0;
   background: rgba(6, 7, 16, 0.92);
   backdrop-filter: blur(4px);
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   z-index: 100;
 }
 
@@ -1043,10 +1045,14 @@ select option {
 
 .mash-panel {
   width: min(560px, 92vw);
+  max-height: calc(100dvh - 24px);
+  margin: auto;
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 16px;
   padding: 28px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 12%, transparent);
   text-align: center;
 }
@@ -1275,19 +1281,9 @@ select option {
     min-width: 0;
   }
 
-  .mash-overlay {
-    align-items: flex-start;
-    overflow-y: auto;
-    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
-  }
-
   .mash-panel {
     width: min(560px, 100%);
-    max-height: calc(100dvh - 24px);
-    margin: auto;
     padding: 20px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
   }
 }
 
