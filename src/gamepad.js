@@ -10,6 +10,30 @@ export const BUTTON_LABELS = LABEL_SETS.xbox;
 // une vraie double-pression humaine, c'est un signe de chatter/contact usé.
 export const CHATTER_THRESHOLD_MS = 60;
 
+// LT/RT (L2/R2) sont toujours aux index 6 et 7 dans le mapping Gamepad API "standard",
+// quelle que soit la marque détectée.
+export const TRIGGER_BUTTON_INDICES = new Set([6, 7]);
+
+export const PRESS_THRESHOLD = 0.08;
+// Une gâchette est un capteur analogique continu, pas un switch binaire: comparer sa
+// valeur à un seuil unique fait osciller l'état "pressé" autour de ce seuil au moindre
+// bruit de capteur ou jeu mécanique du ressort, et se lit à tort comme du chatter. On
+// presse plus haut qu'on ne relâche (hystérésis) pour absorber ce bruit, sans masquer
+// une oscillation large et rapide qui pointerait vers un vrai défaut.
+const TRIGGER_PRESS_THRESHOLD = 0.12;
+const TRIGGER_RELEASE_THRESHOLD = 0.05;
+
+// On ignore btn.pressed pour les gâchettes: ce booléen vient déjà d'un seuillage interne
+// au navigateur/pilote, potentiellement aussi bruité que le nôtre, et il contournerait
+// l'hystérésis si on l'utilisait en OR comme pour les boutons digitaux.
+export function isButtonPressed(btn, index, wasPressed) {
+  if (!btn) return false;
+  if (TRIGGER_BUTTON_INDICES.has(index)) {
+    return wasPressed ? btn.value > TRIGGER_RELEASE_THRESHOLD : btn.value > TRIGGER_PRESS_THRESHOLD;
+  }
+  return btn.pressed || btn.value > PRESS_THRESHOLD;
+}
+
 export function detectControllerType(id = "") {
   const lower = id.toLowerCase();
   if (/xbox|xinput/.test(lower)) return "xbox";

@@ -10,6 +10,7 @@ import {
   NeutralDriftTracker,
   NEUTRAL_DRIFT_WARN_THRESHOLD,
   NEUTRAL_DRIFT_BAD_THRESHOLD,
+  isButtonPressed,
 } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
@@ -1988,12 +1989,12 @@ function loop() {
 
     pad.buttons.forEach((btn, i) => {
       const cell = buttonCells[i];
-      const pressed = btn.pressed || btn.value > 0.08;
+      const wasPressed = prevButtonStates[i] || false;
+      const pressed = isButtonPressed(btn, i, wasPressed);
       if (cell) {
         if (pressed) cell.classList.add("active");
         else cell.classList.remove("active");
       }
-      const wasPressed = prevButtonStates[i] || false;
       if (pressed && !wasPressed) {
         const latency = Number.isFinite(pad.timestamp) && pad.timestamp > 0 ? now - pad.timestamp : null;
         const label = currentLabels[i] || `Bouton ${i}`;

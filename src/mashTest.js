@@ -1,4 +1,4 @@
-import { CHATTER_THRESHOLD_MS } from "./gamepad.js";
+import { CHATTER_THRESHOLD_MS, isButtonPressed } from "./gamepad.js";
 
 // Un écart anormalement long entre deux frames (onglet en arrière-plan, throttling
 // du navigateur, pause GC...) peut faire manquer un relâché/ré-appui ou au contraire
@@ -47,7 +47,7 @@ export class MashSequenceTest {
 
     const current = this.currentButton;
     const btn = padButtons[current.index];
-    const pressed = btn ? btn.pressed || btn.value > 0.08 : false;
+    const pressed = isButtonPressed(btn, current.index, this.prevPressed);
 
     if (pressed && !this.prevPressed) {
       if (this.windowStart == null) this.windowStart = eventTime;
