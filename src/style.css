@@ -46,6 +46,12 @@ header {
   gap: 10px 24px;
 }
 
+.header-row--brand {
+  justify-content: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
 .app-footer {
   margin-top: 40px;
   padding-top: 18px;
@@ -66,9 +72,10 @@ header {
 
 .header-id {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  gap: 10px;
+  text-align: center;
 }
 
 .header-controls {
