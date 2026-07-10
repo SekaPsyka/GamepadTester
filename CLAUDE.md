@@ -11,12 +11,16 @@ App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette
 - État pressé/relâché (digital ou gâchette analogique) centralisé dans `isButtonPressed()` (`src/gamepad.js`) — gère l'hystérésis sur LT/RT (index 6/7), toujours réutiliser plutôt que comparer `btn.value`/`btn.pressed` à la main.
 - Trackers à fenêtre glissante (`NeutralDriftTracker`/`TriggerStabilityTracker` dans `src/gamepad.js`) : ne purger le plus vieil échantillon que si le suivant couvre déjà seul la fenêtre. Le point neutre est déclenché explicitement par l'utilisateur pendant trois secondes ; la stabilité des gâchettes reste mesurée pendant leur maintien.
 - Mapping standard Gamepad API : boutons 0-3 = A/B/X/Y (Croix/Cercle/Carré/Triangle), 4-5 = LB/RB (L1/R1), 6-7 = LT/RT (L2/R2), 8-9 = View/Menu (Share/Options), 10-11 = clic stick gauche/droit, 12-15 = D-pad haut/bas/gauche/droite, 16 = Guide/PS. `pad.axes[0..1]` = stick gauche X/Y, `[2..3]` = stick droit X/Y.
+- Le bouton Guide/PS reste observable dans l'interface en direct, mais il est volontairement exclu du diagnostic répété des boutons.
+- Une commande haptique réussie confirme seulement que le navigateur l'a acceptée : l'application ne peut pas mesurer ni certifier la force physique réellement produite par un moteur.
+- Les états du parcours guidé sont calculés dans une fonction pure. Toute évolution d'un diagnostic doit conserver la cohérence entre le guide, la synthèse à l'écran, la réinitialisation et le rapport PDF.
 - Interface entièrement responsive (`src/style.css`, breakpoints à 960px/720px/560px/360px) — toute nouvelle UI doit rester utilisable sur mobile (cibles tactiles ≥44px, pas d'overflow horizontal).
 
 ## Structure
 
-- `src/main.js` — point d'entrée, construit le DOM, orchestre le diagnostic guidé / mode laboratoire et la boucle `requestAnimationFrame`. Contient aussi l'export du rapport de diagnostic en PDF (`buildDiagnosticReport()` collecte l'état courant, `buildDiagnosticPdf()` le met en page via `jspdf`/`jspdf-autotable`, seules dépendances npm directes du projet).
+- `src/main.js` — point d'entrée, construit le DOM, orchestre le diagnostic guidé / mode laboratoire et la boucle `requestAnimationFrame`. Contient aussi l'export du rapport de diagnostic en PDF (`buildDiagnosticReport()` collecte l'état courant, `buildDiagnosticPdf()` le met en page). `jspdf` et `jspdf-autotable` doivent rester chargés dynamiquement au moment de l'export pour préserver le bundle initial.
 - `src/gamepad.js` — accès Gamepad API, détection de type de manette, labels de boutons, dead zone, état pressé digital/analogique (`isButtonPressed`), détection de drift du point neutre (`NeutralDriftTracker`) et de stabilité des gâchettes tenues à un palier (`TriggerStabilityTracker`).
+- `src/guideFlow.js` — logique pure des étapes, tâches et états du parcours guidé, ainsi que normalisation des résultats des commandes haptiques.
 - `src/controllerSilhouette.js` — silhouette visuelle (image SVG Xbox/PlayStation + zones de surbrillance positionnées en % du viewBox d'origine). Layouts de boutons/sticks codés en dur dans `LAYOUTS`. Se dégrade proprement (frame caché) pour les manettes "generic".
 - `src/mashTest.js` — diagnostic répété des boutons (chatter / doubles déclenchements involontaires et fiabilité de la session).
 - `src/diagnosticSummary.js` — logique pure des états de synthèse, du statut de connexion et des formulations françaises de fiabilité partagées par l'interface et le PDF.
@@ -27,14 +31,21 @@ App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette
 
 ## Tester sans manette physique
 
-Pour valider une fonctionnalité visuellement sans manette branchée : lancer `npm run dev`, ouvrir la page dans le navigateur (claude-in-chrome), puis injecter un faux `navigator.getGamepads` pour simuler boutons/axes. Vérifier ensuite par capture d'écran/zoom plutôt que de supposer que le rendu est correct.
-- Injecter via un `<script>` ajouté au DOM (`document.documentElement.appendChild`), pas directement via `javascript_tool` : ce dernier peut s'exécuter dans un contexte isolé qui ne modifie pas le `navigator` vu par l'app.
+Pour valider une fonctionnalité visuellement sans manette branchée : lancer `npm run dev`, ouvrir la page dans un navigateur contrôlable, puis injecter un faux `navigator.getGamepads` pour simuler boutons/axes. Vérifier ensuite par capture d'écran/zoom plutôt que de supposer que le rendu est correct.
+- Injecter via un `<script>` ajouté au DOM (`document.documentElement.appendChild`), pas via un outil d'évaluation susceptible de s'exécuter dans un contexte isolé qui ne modifie pas le `navigator` vu par l'app.
 - L'onglet doit rester visible/au premier plan : Chrome gèle `requestAnimationFrame` (donc toute la boucle de l'app) sur un onglet en arrière-plan, ce qui peut faire croire à un bug alors que c'est juste l'onglet qui a perdu le focus.
 - Pour des trackers basés sur le temps (fenêtres glissantes, hystérésis), valider la logique isolément avec un petit script Node qui importe `gamepad.js` directement et simule des appels `update()` à pas de temps fixe, plutôt que de se fier uniquement au rendu navigateur (plus rapide, et insensible aux problèmes de focus d'onglet ci-dessus).
+
+## Validation
+
+- Exécuter `npm test` puis `npm run build` après toute modification applicative.
+- Pour un changement d'interface, vérifier aussi les modes guidé et laboratoire, les thèmes concernés, le clavier et au moins un format desktop et mobile.
+- Les tests automatisés ne remplacent pas un contrôle avec une vraie manette pour les comportements matériels ou temporels.
 
 ## Git
 
 - Ne jamais `git add -A` : stager les fichiers explicitement par nom.
+- Ne jamais créer de commit sans demande explicite de l'utilisateur.
 - Ne jamais pusher sans demande explicite de l'utilisateur à chaque fois (une autorisation ne vaut pas pour les fois suivantes).
 
 ## Maintenance de ce fichier

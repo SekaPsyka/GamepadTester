@@ -6,7 +6,7 @@ Application web (Vite + JS vanilla) pour tester et diagnostiquer une manette de 
 
 - Diagnostic guidé en cinq étapes, avec mode laboratoire pour les valeurs brutes
 - Mesure volontaire du point neutre et analyse de l'amplitude des sticks
-- Test de vibration (moteurs séparés, mode continu)
+- Envoi de commandes de vibration aux moteurs séparés, avec réglage continu en mode laboratoire. Le navigateur ne peut pas mesurer la force réellement produite.
 - Silhouette visuelle fidèle de la manette détectée (Xbox / PlayStation) avec surbrillance des boutons, gâchettes, D-pad et sticks
 - Grille de boutons avec détection des doubles déclenchements involontaires (chatter)
 - Historique des appuis
@@ -20,6 +20,8 @@ Les résultats distinguent les mesures cohérentes, les points à confirmer et l
 ```bash
 npm install
 npm run dev
+npm test
+npm run build
 ```
 
 ## Crédits
