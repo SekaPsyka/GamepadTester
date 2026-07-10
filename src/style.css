@@ -16,7 +16,23 @@
   font-family: "Segoe UI", system-ui, sans-serif;
 }
 
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 * { box-sizing: border-box; }
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+li {
+  text-wrap: pretty;
+}
 
 body {
   margin: 0;
@@ -149,6 +165,17 @@ h1 {
   font-family: "Consolas", "SFMono-Regular", monospace;
 }
 
+.mono,
+.guide-progress,
+.device-facts,
+.mash-estimate,
+#mashProgress,
+.mash-count,
+.mash-table,
+.vib-status {
+  font-variant-numeric: tabular-nums;
+}
+
 .field {
   display: flex;
   align-items: center;
@@ -254,6 +281,7 @@ h1 {
 
 .mode-switch-button {
   min-height: 38px;
+  border-radius: 5px;
   border-color: transparent;
   background: transparent;
   color: var(--text-dim);
@@ -1134,6 +1162,7 @@ button.btn-highlight:hover {
 
 @media (prefers-reduced-motion: reduce) {
   button.btn-highlight { animation: none; box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .motor-card.active { animation: none; }
   button { transition-duration: 0.01ms; }
   button:active:not(:disabled) { transform: none; }
 }
