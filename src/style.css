@@ -273,27 +273,15 @@ h1 {
 }
 
 .guide-progress {
-  flex: 0 0 170px;
-  color: var(--text-dim);
+  flex: 0 0 auto;
+  max-width: 260px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--panel-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--accent);
   font: 600 11px "Consolas", "SFMono-Regular", monospace;
   text-align: right;
-}
-
-.guide-progress > div {
-  height: 4px;
-  margin-top: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--panel-border);
-}
-
-.guide-progress i {
-  display: block;
-  height: 100%;
-  width: 20%;
-  border-radius: inherit;
-  background: var(--accent);
-  transition: width 0.25s ease;
 }
 
 .guide-steps {
@@ -336,6 +324,141 @@ h1 {
   color: #090b10;
 }
 
+.guide-steps button[data-state="complete"]:not(.active) {
+  border-color: color-mix(in srgb, var(--neon-green) 42%, var(--panel-border));
+}
+
+.guide-steps button[data-state="complete"]:not(.active) span {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+}
+
+.guide-steps button[data-state="in-progress"]:not(.active) span {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.guide-steps button[data-state="skipped"] {
+  border-style: dashed;
+}
+
+.guide-now {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 22px;
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--panel-border));
+  border-left-width: 4px;
+  border-radius: 10px;
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--accent) 13%, transparent), transparent 45%),
+    color-mix(in srgb, var(--panel) 82%, var(--bg));
+  box-shadow: 0 12px 28px color-mix(in srgb, #000 24%, transparent);
+}
+
+.guide-now-kicker {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--accent);
+  font: 700 10px "Consolas", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.guide-now h3 {
+  margin: 0;
+  color: var(--text);
+  font: 600 22px "Bahnschrift Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.guide-now p {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.guide-task-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-task {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 76%, transparent);
+}
+
+.guide-task-marker {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--text-dim);
+  border-radius: 50%;
+}
+
+.guide-task-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.guide-task-copy strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.guide-task-copy small,
+.guide-task-status {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.guide-task-status {
+  font-family: "Consolas", monospace;
+  text-transform: uppercase;
+}
+
+.guide-task--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg));
+}
+
+.guide-task--active .guide-task-marker {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.guide-task--complete .guide-task-marker,
+.guide-task--not-applicable .guide-task-marker {
+  border-color: var(--neon-green);
+  background: var(--neon-green);
+  box-shadow: inset 0 0 0 3px var(--bg);
+}
+
+.guide-task--complete .guide-task-status {
+  color: var(--neon-green);
+}
+
+.guide-task--error {
+  border-color: color-mix(in srgb, var(--status-bad) 62%, var(--panel-border));
+}
+
+.guide-task--error .guide-task-marker,
+.guide-task--error .guide-task-status {
+  border-color: var(--status-bad);
+  color: var(--status-bad);
+}
+
 .guide-actions {
   display: flex;
   align-items: center;
@@ -346,8 +469,17 @@ h1 {
 
 .guide-context-action {
   margin-right: auto;
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--panel-border));
+  min-height: 46px;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
+  font-weight: 700;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.guide-skip {
+  border-style: dashed;
+  color: var(--text-dim);
 }
 
 .guide-shell--lab {
@@ -358,9 +490,30 @@ h1 {
 
 .guide-shell--lab .guide-main,
 .guide-shell--lab .guide-steps,
+.guide-shell--lab .guide-now,
 .guide-shell--lab .guide-actions {
   display: none;
 }
+
+body[data-app-mode="guided"] #openMashTestBtn,
+body[data-app-mode="guided"] #exportReportBtn {
+  display: none;
+}
+
+body[data-app-mode="guided"] #resetDataBtn {
+  border-color: var(--panel-border);
+  background: transparent;
+  color: var(--text-dim);
+}
+
+body[data-app-mode="guided"] .header-actions {
+  display: flex;
+  width: auto;
+}
+
+body[data-app-mode="guided"] .stick-panel--left { order: -3; }
+body[data-app-mode="guided"] .stick-panel--right { order: -2; }
+body[data-app-mode="guided"] .neutral-panel { order: -1; }
 
 .device-panel {
   display: grid;
@@ -1169,6 +1322,34 @@ select option {
   color: var(--accent-alt);
 }
 
+.mash-optimal-conditions details {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 25%, var(--panel-border));
+}
+
+.mash-optimal-conditions summary {
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mash-optimal-conditions details ul {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.mash-estimate {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--text);
+  font: 600 12px/1.5 "Consolas", monospace;
+  text-align: left;
+}
+
 .mash-actions {
   display: flex;
   justify-content: center;
@@ -1361,6 +1542,11 @@ select option {
     text-align: left;
   }
 
+  .guide-now {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
   .guide-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1373,6 +1559,21 @@ select option {
     width: 100%;
     margin-right: 0;
     order: -1;
+  }
+
+  .guide-skip,
+  .guide-next {
+    flex: 1;
+  }
+
+  body[data-app-mode="guided"] .header-actions {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  body[data-app-mode="guided"] .header-actions button {
+    width: auto;
   }
 
   .results-grid {
@@ -1510,6 +1711,14 @@ select option {
 
   .header-controls .field {
     flex-basis: 100%;
+  }
+
+  .guide-task {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .guide-task-status {
+    grid-column: 2;
   }
 
   .mode-switch,

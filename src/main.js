@@ -19,6 +19,7 @@ import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
 import { MashSequenceTest, buildMashQueue, gradeForChatter, chatterRate, buildMashVerdict } from "./mashTest.js";
 import { createSilhouette, setSilhouetteType, updateSilhouette } from "./controllerSilhouette.js";
+import { buildGuideFlow, executeHapticCommand } from "./guideFlow.js";
 
 const app = document.getElementById("app");
 
@@ -60,10 +61,7 @@ app.innerHTML = `
         <h2 id="guideTitle">Vérifiez d'abord la manette détectée</h2>
         <p id="guideDescription">L'application commence par vérifier l'identité, le mapping et les capacités exposées par le navigateur.</p>
       </div>
-      <div class="guide-progress" aria-hidden="true">
-        <span id="guideProgressLabel">20 %</span>
-        <div><i id="guideProgressBar"></i></div>
-      </div>
+      <div class="guide-progress" id="guideProgressLabel">Connexion en attente</div>
     </div>
     <nav class="guide-steps" aria-label="Étapes du diagnostic">
       <button type="button" data-guide-target="overview" class="active" aria-current="step"><span>1</span>Connexion</button>
@@ -72,9 +70,18 @@ app.innerHTML = `
       <button type="button" data-guide-target="buttons"><span>4</span>Boutons</button>
       <button type="button" data-guide-target="summary"><span>5</span>Résultats</button>
     </nav>
+    <section class="guide-now" id="guideNow" aria-labelledby="guideNowTitle">
+      <div class="guide-now-copy">
+        <span class="guide-now-kicker">À faire maintenant</span>
+        <h3 id="guideNowTitle">Vérifiez la manette reconnue</h3>
+        <p id="guideNowDescription">Confirmez que le nom et le nombre de commandes correspondent à votre manette.</p>
+      </div>
+      <ol class="guide-task-list" id="guideTaskList"></ol>
+    </section>
     <div class="guide-actions">
       <button type="button" id="guidePrevBtn" disabled>Étape précédente</button>
       <button type="button" id="guideContextAction" class="guide-context-action hidden"></button>
+      <button type="button" id="guideSkipBtn" class="guide-skip hidden">Passer cette étape</button>
       <button type="button" id="guideNextBtn" class="btn-highlight">Continuer vers les sticks</button>
     </div>
   </section>
@@ -95,7 +102,7 @@ app.innerHTML = `
       <div class="device-visual" id="silhouetteContainer"></div>
     </section>
 
-    <section class="panel" data-guide-section="sticks">
+    <section class="panel stick-panel stick-panel--left" data-guide-section="sticks">
       <h2>Joystick gauche</h2>
       <div class="stick-row">
         <canvas class="stick" id="leftCanvas" width="180" height="180" aria-label="Position du joystick gauche"></canvas>
@@ -118,7 +125,7 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="panel" data-guide-section="sticks">
+    <section class="panel stick-panel stick-panel--right" data-guide-section="sticks">
       <h2>Joystick droit</h2>
       <div class="stick-row">
         <canvas class="stick" id="rightCanvas" width="180" height="180" aria-label="Position du joystick droit"></canvas>
@@ -141,7 +148,7 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="panel span-2" data-guide-section="sticks">
+    <section class="panel neutral-panel span-2" id="neutralPanel" data-guide-section="sticks">
       <div class="panel-heading-row">
         <div>
           <span class="panel-kicker">Mesure guidée</span>
@@ -260,16 +267,22 @@ app.innerHTML = `
     <div class="mash-panel" tabindex="-1">
       <div id="mashSetup">
         <h2 id="mashDialogTitle">Diagnostic des boutons</h2>
-        <p class="note">Le test passe en revue les boutons utiles au diagnostic. Le bouton système Guide/PS est volontairement exclu, car il peut être intercepté par le système. Appuyez rapidement mais nettement sur le bouton demandé ; le chrono démarre au premier appui.</p>
+        <p class="note">Préparez-vous avant de commencer : le test passera ensuite automatiquement d'un bouton au suivant. Le bouton système Guide/PS est volontairement exclu.</p>
         <div class="mash-optimal-conditions">
           <h3>Pour un résultat fiable</h3>
           <ul>
             <li>Appuyez à un rythme <strong>rapide, net et régulier</strong>, en relâchant bien chaque bouton entre deux appuis.</li>
-            <li>Batterie/piles pleines, ou manette branchée en filaire.</li>
-            <li>Privilégiez une connexion filaire ; en sans-fil, restez proche du récepteur.</li>
-            <li>Fermez les autres applications ou onglets qui pourraient utiliser la manette en même temps.</li>
             <li>Visez <strong>au moins 20 appuis</strong> par bouton sur la durée du test: en dessous, le résultat est jugé pas assez fiable pour conclure (affiché "N/A").</li>
+            <li>Gardez cet onglet visible jusqu'à la fin du diagnostic.</li>
           </ul>
+          <details>
+            <summary>Conseils supplémentaires</summary>
+            <ul>
+              <li>Utilisez une batterie ou des piles suffisamment chargées.</li>
+              <li>Privilégiez une connexion filaire ; en sans-fil, restez proche du récepteur.</li>
+              <li>Fermez les autres applications susceptibles d'utiliser la manette.</li>
+            </ul>
+          </details>
         </div>
         <p class="note" id="mashSetupWarning"></p>
         <label class="field">Durée par bouton
@@ -278,8 +291,9 @@ app.innerHTML = `
             <option value="10000">10 secondes</option>
           </select>
         </label>
+        <p class="mash-estimate" id="mashEstimate"></p>
         <div class="mash-actions">
-          <button id="mashStartBtn">Démarrer le test</button>
+          <button id="mashStartBtn" class="btn-highlight">Commencer le test</button>
           <button id="mashCancelSetupBtn" class="danger">Annuler</button>
         </div>
       </div>
@@ -314,9 +328,12 @@ const guideKicker = document.getElementById("guideKicker");
 const guideTitle = document.getElementById("guideTitle");
 const guideDescription = document.getElementById("guideDescription");
 const guideProgressLabel = document.getElementById("guideProgressLabel");
-const guideProgressBar = document.getElementById("guideProgressBar");
+const guideNowTitle = document.getElementById("guideNowTitle");
+const guideNowDescription = document.getElementById("guideNowDescription");
+const guideTaskList = document.getElementById("guideTaskList");
 const guidePrevBtn = document.getElementById("guidePrevBtn");
 const guideNextBtn = document.getElementById("guideNextBtn");
+const guideSkipBtn = document.getElementById("guideSkipBtn");
 const guideContextAction = document.getElementById("guideContextAction");
 const guideStepButtons = [...document.querySelectorAll("[data-guide-target]")];
 const modeButtons = [...document.querySelectorAll("[data-app-mode]")];
@@ -336,7 +353,6 @@ const GUIDE_STEPS = [
     label: "Sticks",
     title: "Mesurez le point neutre et l'amplitude",
     description: "Posez d'abord la manette sans toucher aux sticks, puis effectuez les rotations demandées pour distinguer décalage et amplitude incomplète.",
-    action: "Mesurer le point neutre",
   },
   {
     id: "triggers",
@@ -349,20 +365,127 @@ const GUIDE_STEPS = [
     label: "Boutons",
     title: "Recherchez les doubles déclenchements",
     description: "Le test guidé exige un nombre minimal d'appuis et invalide les mesures perturbées par un ralentissement du navigateur.",
-    action: "Lancer le diagnostic des boutons",
   },
   {
     id: "summary",
     label: "Résultats",
     title: "Lisez les résultats avec leur niveau de confiance",
     description: "Un test non réalisé reste indiqué comme tel : l'application ne conclut jamais à un bon état à partir de données manquantes.",
-    action: "Exporter le rapport PDF",
   },
 ];
 
 let appMode = "guided";
 let guideStepIndex = 0;
 let isPadConnected = null;
+let guideContextHandler = null;
+const skippedGuideSteps = new Set();
+
+const TASK_STATE_LABELS = {
+  pending: "À faire",
+  active: "En cours",
+  complete: "Terminée",
+  error: "Échec",
+  "not-applicable": "Non applicable",
+};
+
+const STEP_STATE_LABELS = {
+  "not-started": "Non commencé",
+  "in-progress": "En cours",
+  complete: "Terminé",
+  skipped: "Passé",
+};
+
+function getGuideFlow() {
+  const pad = getSelectedGamepad();
+  const leftNeutral = neutralDrift.left.getOffset();
+  const rightNeutral = neutralDrift.right.getOffset();
+  return buildGuideFlow({
+    connected: Boolean(isPadConnected),
+    neutral: {
+      measured: leftNeutral.measured && rightNeutral.measured,
+      active: Boolean(neutralCapture),
+    },
+    calibration: {
+      left: { complete: calibration.left.completed, active: calibration.left.active },
+      right: { complete: calibration.right.completed, active: calibration.right.active },
+    },
+    triggers: {
+      lt: { complete: triggerStability.lt.getResult().measured, active: triggerStability.lt.isAttempting() },
+      rt: { complete: triggerStability.rt.getResult().measured, active: triggerStability.rt.isAttempting() },
+    },
+    vibrationSupported: pad ? Boolean(pad.vibrationActuator) : null,
+    vibrationCommands,
+    mashCompleted: Boolean(lastMashResults),
+    skippedSteps: [...skippedGuideSteps],
+  });
+}
+
+function taskInstruction(stepId, taskId) {
+  const instructions = {
+    connection: ["Vérifiez la manette reconnue", "Confirmez que le nom, le nombre de boutons et le nombre d'axes correspondent à votre manette."],
+    neutral: ["Posez la manette et ne la touchez plus", "Démarrez la mesure de trois secondes lorsque les deux sticks sont complètement relâchés."],
+    "amplitude-left": ["Testez l'amplitude du stick gauche", "Démarrez l'enregistrement, faites un tour complet et régulier, puis arrêtez pour analyser le tracé."],
+    "amplitude-right": ["Testez l'amplitude du stick droit", "Démarrez l'enregistrement, faites un tour complet et régulier, puis arrêtez pour analyser le tracé."],
+    "trigger-lt": ["Maintenez LT / L2 à mi-course", "Gardez la gâchette aussi stable que possible pendant cinq secondes. La mesure démarre automatiquement."],
+    "trigger-rt": ["Maintenez RT / R2 à mi-course", "Gardez la gâchette aussi stable que possible pendant cinq secondes. La mesure démarre automatiquement."],
+    "vibration-strong": ["Testez le moteur gauche", "L'application enverra une commande à 100 % pendant 600 ms, puis passera automatiquement au moteur droit."],
+    "vibration-weak": ["Testez le moteur droit", "L'application enverra une commande à 100 % pendant 600 ms, puis terminera cette étape."],
+    "button-diagnostic": ["Préparez le diagnostic des boutons", "Consultez d'abord les consignes et la durée estimée. Le test ne démarrera qu'après votre confirmation."],
+  };
+  if (stepId === "summary") return ["Consultez les résultats", "Chaque test manquant, passé ou à confirmer reste clairement signalé avant l'export."];
+  return instructions[taskId] || ["Étape terminée", "Toutes les vérifications prévues pour cette étape ont été enregistrées."];
+}
+
+function getGuideAction(stepId, nextTask) {
+  if (stepId === "sticks") {
+    if (nextTask?.id === "neutral") return { label: "Démarrer la mesure du point neutre — 3 s", run: startNeutralCapture };
+    if (nextTask?.id === "amplitude-left") return {
+      label: calibration.left.active ? "Arrêter et analyser le stick gauche" : "Démarrer le test du stick gauche",
+      run: () => toggleCalibration("left"),
+    };
+    if (nextTask?.id === "amplitude-right") return {
+      label: calibration.right.active ? "Arrêter et analyser le stick droit" : "Démarrer le test du stick droit",
+      run: () => toggleCalibration("right"),
+    };
+  }
+  if (stepId === "triggers") {
+    if (nextTask?.id === "vibration-strong" && nextTask.state !== "active") return {
+      label: nextTask.state === "error" ? "Réessayer le moteur gauche" : "Tester le moteur gauche — 600 ms",
+      run: () => runGuidedMotorTest("strong"),
+    };
+    if (nextTask?.id === "vibration-weak" && nextTask.state !== "active") return {
+      label: nextTask.state === "error" ? "Réessayer le moteur droit" : "Tester le moteur droit — 600 ms",
+      run: () => runGuidedMotorTest("weak"),
+    };
+  }
+  if (stepId === "buttons" && nextTask) return { label: "Voir les consignes du diagnostic", run: () => openMashTestBtn.click() };
+  if (stepId === "summary") return { label: "Exporter le rapport PDF", run: () => exportReportBtn.click() };
+  return null;
+}
+
+function renderGuideTasks(stepId, stepState) {
+  guideTaskList.replaceChildren();
+  for (const item of stepState.tasks) {
+    const row = document.createElement("li");
+    row.className = `guide-task guide-task--${item.state}`;
+    const marker = document.createElement("span");
+    marker.className = "guide-task-marker";
+    marker.setAttribute("aria-hidden", "true");
+    const copy = document.createElement("span");
+    copy.className = "guide-task-copy";
+    const label = document.createElement("strong");
+    label.textContent = item.label;
+    const detail = document.createElement("small");
+    detail.textContent = item.detail;
+    const status = document.createElement("span");
+    status.className = "guide-task-status";
+    status.textContent = TASK_STATE_LABELS[item.state];
+    copy.append(label, detail);
+    row.append(marker, copy, status);
+    guideTaskList.appendChild(row);
+  }
+  guideTaskList.classList.toggle("hidden", stepId === "summary");
+}
 
 function renderGuidedSummary() {
   const report = buildDiagnosticReport();
@@ -392,7 +515,7 @@ function renderGuidedSummary() {
     card.className = `result-card result-card--${item.status}`;
     const status = document.createElement("span");
     status.className = "result-card-status";
-    status.textContent = item.status === "ok" ? "Mesure cohérente" : item.status === "warn" ? "À confirmer" : item.status === "bad" ? "Problème probable" : "Non testé";
+    status.textContent = item.label || (item.status === "ok" ? "Mesure cohérente" : item.status === "warn" ? "À confirmer" : item.status === "bad" ? "Problème probable" : "Non testé");
     const title = document.createElement("h3");
     title.textContent = item.title;
     const text = document.createElement("p");
@@ -404,27 +527,58 @@ function renderGuidedSummary() {
 
 function renderGuide() {
   const step = GUIDE_STEPS[guideStepIndex];
-  const progress = Math.round(((guideStepIndex + 1) / GUIDE_STEPS.length) * 100);
+  const flow = getGuideFlow();
+  const stepState = flow.steps[step.id];
+  const nextTask = stepState.tasks.find((item) => item.state === "active") || stepState.tasks.find((item) => item.state === "error") || stepState.tasks.find((item) => item.state === "pending");
   guideKicker.textContent = `Étape ${guideStepIndex + 1} sur ${GUIDE_STEPS.length} · ${step.label}`;
   const waitingForPad = !isPadConnected && step.id === "overview";
   guideTitle.textContent = waitingForPad ? "Connectez une manette pour commencer" : step.title;
   guideDescription.textContent = waitingForPad
     ? "Branchez-la en USB ou associez-la en Bluetooth, puis appuyez sur un bouton pour que le navigateur la détecte."
     : step.description;
-  guideProgressLabel.textContent = `${progress} %`;
-  guideProgressBar.style.width = `${progress}%`;
+  guideProgressLabel.textContent = step.id === "overview"
+    ? stepState.state === "complete" ? "Connexion vérifiée" : "Connexion en attente"
+    : stepState.totalCount
+      ? stepState.state === "skipped"
+      ? "Étape passée — mesures manquantes"
+      : `${stepState.completedCount} ${stepState.completedCount === 1 ? "mesure terminée" : "mesures terminées"} sur ${stepState.totalCount}`
+      : "Synthèse du diagnostic";
   guidePrevBtn.disabled = guideStepIndex === 0;
-  guideNextBtn.disabled = !isPadConnected || guideStepIndex === GUIDE_STEPS.length - 1;
-  guideNextBtn.textContent = guideStepIndex < GUIDE_STEPS.length - 1 ? `Continuer vers ${GUIDE_STEPS[guideStepIndex + 1].label.toLowerCase()}` : "Diagnostic parcouru";
+  const canContinue = stepState.state === "complete" || stepState.state === "skipped";
+  guideNextBtn.classList.toggle("hidden", !canContinue || guideStepIndex === GUIDE_STEPS.length - 1);
+  guideNextBtn.disabled = !isPadConnected;
+  const nextStepLabels = { sticks: "les sticks", triggers: "les gâchettes", buttons: "les boutons", summary: "les résultats" };
+  guideNextBtn.textContent = guideStepIndex < GUIDE_STEPS.length - 1 ? `Continuer vers ${nextStepLabels[GUIDE_STEPS[guideStepIndex + 1].id]}` : "Diagnostic parcouru";
 
-  guideContextAction.classList.toggle("hidden", !step.action);
-  guideContextAction.textContent = step.action || "";
+  const actionableTask = nextTask || (step.id === "summary" ? null : undefined);
+  let [nowTitle, nowDescription] = taskInstruction(step.id, actionableTask?.id);
+  const vibrationSide = actionableTask?.id === "vibration-strong" ? "strong" : actionableTask?.id === "vibration-weak" ? "weak" : null;
+  if (vibrationSide && actionableTask.state === "active") {
+    nowTitle = vibrationSide === "strong" ? "Commande envoyée au moteur gauche" : "Commande envoyée au moteur droit";
+    nowDescription = "Patientez pendant les 600 ms de vibration. Le parcours avancera automatiquement à la fin de la commande.";
+  } else if (vibrationSide && actionableTask.state === "error") {
+    nowTitle = vibrationSide === "strong" ? "La commande du moteur gauche a échoué" : "La commande du moteur droit a échoué";
+    nowDescription = "La commande a été refusée ou interrompue. Gardez cet onglet visible, puis réessayez.";
+  }
+  guideNowTitle.textContent = nowTitle;
+  guideNowDescription.textContent = nowDescription;
+  renderGuideTasks(step.id, stepState);
 
+  const action = getGuideAction(step.id, actionableTask);
+  guideContextHandler = action?.run || null;
+  guideContextAction.classList.toggle("hidden", !action);
+  guideContextAction.textContent = action?.label || "";
+  guideSkipBtn.classList.toggle("hidden", !isPadConnected || !["sticks", "triggers", "buttons"].includes(step.id) || canContinue);
+
+  const firstBlockingIndex = GUIDE_STEPS.slice(0, -1).findIndex(({ id }) => !["complete", "skipped"].includes(flow.steps[id].state));
   guideStepButtons.forEach((button, index) => {
     const active = index === guideStepIndex;
+    const buttonStepState = flow.steps[GUIDE_STEPS[index].id];
     button.classList.toggle("active", active);
     button.toggleAttribute("aria-current", active);
-    button.disabled = !isPadConnected && index > 0;
+    button.dataset.state = buttonStepState.state;
+    button.setAttribute("aria-label", `${GUIDE_STEPS[index].label} — ${STEP_STATE_LABELS[buttonStepState.state] || "Synthèse"}`);
+    button.disabled = (!isPadConnected && index > 0) || (firstBlockingIndex >= 0 && index > firstBlockingIndex);
   });
 
   guideSections.forEach((section) => {
@@ -460,11 +614,15 @@ guideNextBtn.addEventListener("click", () => {
   guideStepIndex = Math.min(GUIDE_STEPS.length - 1, guideStepIndex + 1);
   renderGuide();
 });
+guideSkipBtn.addEventListener("click", () => {
+  skippedGuideSteps.add(GUIDE_STEPS[guideStepIndex].id);
+  guideStepIndex = Math.min(GUIDE_STEPS.length - 1, guideStepIndex + 1);
+  renderGuide();
+});
 guideContextAction.addEventListener("click", () => {
-  const stepId = GUIDE_STEPS[guideStepIndex].id;
-  if (stepId === "sticks") startNeutralCapture();
-  if (stepId === "buttons") openMashTestBtn.click();
-  if (stepId === "summary") exportReportBtn.click();
+  skippedGuideSteps.delete(GUIDE_STEPS[guideStepIndex].id);
+  guideContextHandler?.();
+  renderGuide();
 });
 
 function setConnectedUI(connected) {
@@ -487,7 +645,6 @@ function setConnectedUI(connected) {
   }
   renderGuide();
 }
-setConnectedUI(false);
 
 const themeSelect = document.getElementById("themeSelect");
 for (const [id, theme] of Object.entries(THEMES)) {
@@ -603,6 +760,7 @@ const vibStatus = document.getElementById("vibStatus");
 const vibStopBtn = document.getElementById("vibStop");
 const motorCardStrong = document.getElementById("motorCardStrong");
 const motorCardWeak = document.getElementById("motorCardWeak");
+const vibrationCommands = { strong: "pending", weak: "pending" };
 
 let vibrationActive = false;
 
@@ -625,36 +783,56 @@ function updateVibStatus() {
   }
 }
 
-// Pulsation visuelle déclenchée par l'intention d'envoi, pas par un retour matériel:
-// l'API ne renvoie aucun état de vibration en cours, donc on stoppe l'animation
-// nous-mêmes (catch / fin de durée) pour ne jamais donner un faux retour positif.
+// L'API confirme l'achèvement de la commande, jamais la force réellement produite
+// par le moteur. La pulsation illustre donc l'envoi, pas un retour physique mesuré.
 function pulseMotorCard(card, duration) {
   card.classList.add("active");
   setTimeout(() => card.classList.remove("active"), duration);
 }
 
-function playRumble(weak, strong, duration = 600, { cards = [] } = {}) {
+async function playRumble(weak, strong, duration = 600, { cards = [], reportInterruption = true } = {}) {
   const pad = getSelectedGamepad();
   const actuator = pad?.vibrationActuator;
   if (!actuator) {
     vibNote.textContent = "Vibration non supportée par cette manette/navigateur.";
-    return Promise.resolve();
+    return { status: "unsupported" };
   }
   for (const card of cards) pulseMotorCard(card, duration);
-  return actuator
-    .playEffect("dual-rumble", {
+  const outcome = await executeHapticCommand(() => actuator.playEffect("dual-rumble", {
       startDelay: 0,
       duration,
       weakMagnitude: weak,
       strongMagnitude: strong,
-    })
-    .then(() => {
-      vibNote.textContent = "";
-    })
-    .catch(() => {
-      vibNote.textContent = "Effet de vibration refusé.";
+    }));
+  if (outcome.status === "error") {
+    if (outcome.reason === "preempted") {
+      if (reportInterruption) vibNote.textContent = "Commande de vibration interrompue avant sa fin.";
+    } else {
+      vibNote.textContent = "Commande de vibration refusée. Gardez cet onglet visible, puis réessayez.";
       resetVibrationUI();
-    });
+    }
+    return { status: "error" };
+  }
+  vibNote.textContent = "";
+  return { status: "complete" };
+}
+
+async function runGuidedMotorTest(side) {
+  const button = document.getElementById(side === "strong" ? "vibStrongTest" : "vibWeakTest");
+  const card = side === "strong" ? motorCardStrong : motorCardWeak;
+  vibrationCommands[side] = "running";
+  skippedGuideSteps.delete("triggers");
+  button.disabled = true;
+  renderGuide();
+  const result = side === "strong"
+    ? await playRumble(0, 1, 600, { cards: [card] })
+    : await playRumble(1, 0, 600, { cards: [card] });
+  button.disabled = false;
+  vibrationCommands[side] = result.status === "complete" ? "complete" : "error";
+  if (result.status === "complete") {
+    vibNote.textContent = "Commande envoyée. L'application ne peut pas mesurer la force réellement produite.";
+  }
+  renderGuide();
 }
 
 const vibStrongLive = document.getElementById("vibStrongLive");
@@ -681,7 +859,7 @@ function resetVibrationUI() {
 
 function stopLiveRumble() {
   resetVibrationUI();
-  playRumble(0, 0, 1);
+  playRumble(0, 0, 1, { reportInterruption: false });
 }
 
 function syncLiveRumble() {
@@ -702,7 +880,7 @@ function syncLiveRumble() {
   setVibrationActive(true);
   // playEffect ne propose pas de mode infini : on rejoue l'effet en boucle
   // pour simuler une vibration continue tant qu'un curseur est actif.
-  const refresh = () => playRumble(weak, strong, 300);
+  const refresh = () => playRumble(weak, strong, 300, { reportInterruption: false });
   refresh();
   liveRumbleTimer = setInterval(refresh, 250);
 }
@@ -710,12 +888,8 @@ function syncLiveRumble() {
 vibStrongLive.addEventListener("input", syncLiveRumble);
 vibWeakLive.addEventListener("input", syncLiveRumble);
 
-document.getElementById("vibStrongTest").addEventListener("click", () =>
-  playRumble(0, 1, 600, { cards: [motorCardStrong] })
-);
-document.getElementById("vibWeakTest").addEventListener("click", () =>
-  playRumble(1, 0, 600, { cards: [motorCardWeak] })
-);
+document.getElementById("vibStrongTest").addEventListener("click", () => runGuidedMotorTest("strong"));
+document.getElementById("vibWeakTest").addEventListener("click", () => runGuidedMotorTest("weak"));
 document.getElementById("presetLight").addEventListener("click", () =>
   playRumble(0.2, 0.2, 600, { cards: [motorCardStrong, motorCardWeak] })
 );
@@ -857,9 +1031,10 @@ function drawDrift(ctx, canvas, history) {
 }
 
 const calibration = {
-  left: { active: false, points: [] },
-  right: { active: false, points: [] },
+  left: { active: false, completed: false, points: [] },
+  right: { active: false, completed: false, points: [] },
 };
+const calibrationControls = {};
 
 // Analyse le tracé d'un stick par secteurs angulaires plutôt que par une simple rondeur globale.
 // De nombreux sticks (notamment Xbox) ont un guide mécanique carré/octogonal: le rayon
@@ -920,30 +1095,42 @@ function setupCalibration(side, buttonId, resultId, resetId) {
   const resetBtn = document.getElementById(resetId);
   const state = calibration[side];
 
-  btn.addEventListener("click", () => {
-    if (!state.active) {
-      state.active = true;
-      state.points = [];
-      btn.textContent = "Arrêter & afficher le résultat";
-      resultEl.textContent = "Calibration en cours, faites le tour complet du stick...";
-    } else {
-      state.active = false;
-      btn.textContent = "Tester l'amplitude du stick";
-      if (state.points.length < 5) {
-        resultEl.textContent = "Pas assez de données, réessayez.";
-        return;
-      }
-      const verdict = analyzeRange(state.points);
-      resultEl.textContent = verdict;
-    }
-  });
+  calibrationControls[side] = { btn, resultEl };
+  btn.addEventListener("click", () => toggleCalibration(side));
 
   resetBtn.addEventListener("click", () => {
     state.active = false;
+    state.completed = false;
     state.points = [];
     btn.textContent = "Tester l'amplitude du stick";
     resultEl.textContent = "";
+    renderGuide();
   });
+}
+
+function toggleCalibration(side) {
+  const state = calibration[side];
+  const { btn, resultEl } = calibrationControls[side];
+  skippedGuideSteps.delete("sticks");
+  if (!state.active) {
+    state.active = true;
+    state.completed = false;
+    state.points = [];
+    btn.textContent = "Arrêter & afficher le résultat";
+    resultEl.textContent = "Calibration en cours, faites le tour complet du stick...";
+  } else {
+    state.active = false;
+    btn.textContent = "Tester l'amplitude du stick";
+    if (state.points.length < 5) {
+      state.completed = false;
+      resultEl.textContent = "Pas assez de données, réessayez.";
+      renderGuide();
+      return;
+    }
+    state.completed = true;
+    resultEl.textContent = analyzeRange(state.points);
+  }
+  renderGuide();
 }
 setupCalibration("left", "leftCalibBtn", "leftCalibResult", "leftCalibReset");
 setupCalibration("right", "rightCalibBtn", "rightCalibResult", "rightCalibReset");
@@ -1001,6 +1188,7 @@ function finishNeutralCapture() {
   }
   renderNeutralDrift("left");
   renderNeutralDrift("right");
+  renderGuide();
 }
 
 function updateNeutralCapture(lx, ly, rx, ry, now, frameGapMs) {
@@ -1020,6 +1208,7 @@ function updateNeutralCapture(lx, ly, rx, ry, now, frameGapMs) {
 
 function startNeutralCapture() {
   if (!getSelectedGamepad() || neutralCapture) return;
+  skippedGuideSteps.delete("sticks");
   neutralDrift.left.reset();
   neutralDrift.right.reset();
   const now = performance.now();
@@ -1028,6 +1217,7 @@ function startNeutralCapture() {
   guideContextAction.disabled = true;
   neutralCaptureStatus.textContent = "Mesure en cours : ne touchez plus à la manette.";
   neutralCaptureStatus.dataset.status = "active";
+  renderGuide();
 }
 
 measureNeutralBtn.addEventListener("click", startNeutralCapture);
@@ -1040,6 +1230,15 @@ const triggerStabilityResultEls = {
   lt: document.getElementById("ltStabilityResult"),
   rt: document.getElementById("rtStabilityResult"),
 };
+const triggerGuideStates = { lt: "idle", rt: "idle" };
+
+function syncTriggerGuideState(side, tracker, result) {
+  const nextState = result.measured ? "complete" : tracker.isAttempting() ? "active" : "idle";
+  if (nextState === triggerGuideStates[side]) return;
+  triggerGuideStates[side] = nextState;
+  if (nextState !== "idle") skippedGuideSteps.delete("triggers");
+  renderGuide();
+}
 
 function triggerStabilityStatus(result) {
   if (!result.measured) return { key: "na", label: "Stabilité : maintenez à mi-course pour mesurer..." };
@@ -1069,16 +1268,19 @@ function renderTriggerStability(side, now) {
       ? `Stabilité : nouvelle mesure en cours, maintenez encore ${remainingS.toFixed(1)} s...`
       : `Stabilité : maintenez encore ${remainingS.toFixed(1)} s...`;
     el.className = "note mash-grade-na";
+    syncTriggerGuideState(side, tracker, result);
     return result;
   }
   if (!result.measured) {
     el.textContent = "Stabilité : maintenez à mi-course pour mesurer...";
     el.className = "note mash-grade-na";
+    syncTriggerGuideState(side, tracker, result);
     return result;
   }
   const status = triggerStabilityStatus(result);
   el.textContent = status.label;
   el.className = `note mash-grade-${status.key}`;
+  syncTriggerGuideState(side, tracker, result);
   return result;
 }
 
@@ -1094,6 +1296,7 @@ const mashCountEl = document.getElementById("mashCount");
 const mashSummaryTableEl = document.getElementById("mashSummaryTable");
 const mashSetupWarningEl = document.getElementById("mashSetupWarning");
 const mashStartBtnEl = document.getElementById("mashStartBtn");
+const mashEstimateEl = document.getElementById("mashEstimate");
 const mashPanelEl = mashOverlay.querySelector(".mash-panel");
 
 let mashTest = null;
@@ -1193,12 +1396,36 @@ function updateMashRunningUI(now) {
   mashCountEl.textContent = mashTest.pressCount;
 }
 
+function formatEstimatedDuration(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds} s`;
+  return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} s`;
+}
+
+function updateMashEstimate() {
+  const pad = getSelectedGamepad();
+  if (!pad) {
+    mashEstimateEl.textContent = "Connectez une manette pour calculer la durée du test.";
+    mashStartBtnEl.textContent = "Commencer le test";
+    return;
+  }
+  const queue = buildMashQueue(currentLabels, pad.buttons.length);
+  const totalSeconds = Math.round((queue.length * Number(mashDurationSelect.value)) / 1000);
+  const durationLabel = formatEstimatedDuration(totalSeconds);
+  mashEstimateEl.textContent = `${queue.length} boutons utiles · durée minimale estimée : ${durationLabel}. Le chrono de chaque bouton démarre au premier appui.`;
+  mashStartBtnEl.textContent = `Commencer le test — environ ${durationLabel}`;
+}
+
 function openMashSetup() {
   const hasPad = Boolean(getSelectedGamepad());
   mashSetupWarningEl.textContent = hasPad ? "" : "Aucune manette connectée, branchez-la avant de démarrer.";
   mashStartBtnEl.disabled = !hasPad;
+  updateMashEstimate();
   showMashScreen("setup");
 }
+
+mashDurationSelect.addEventListener("change", updateMashEstimate);
 
 openMashTestBtn.addEventListener("click", () => {
   mashReturnFocus = document.activeElement;
@@ -1238,12 +1465,14 @@ document.getElementById("mashCancelSetupBtn").addEventListener("click", closeMas
 
 document.getElementById("mashRetestBtn").addEventListener("click", () => {
   lastMashResults = null;
+  renderGuide();
   openMashSetup();
 });
 
 mashStartBtnEl.addEventListener("click", () => {
   const pad = getSelectedGamepad();
   if (!pad) return;
+  skippedGuideSteps.delete("buttons");
   const durationMs = Number(mashDurationSelect.value);
   const queue = buildMashQueue(currentLabels, pad.buttons.length);
   mashTest = new MashSequenceTest(queue, durationMs);
@@ -1333,6 +1562,13 @@ function buildDiagnosticReport() {
       lt: triggerStability.lt.getResult(),
       rt: triggerStability.rt.getResult(),
     },
+    vibration: {
+      supported: Boolean(pad?.vibrationActuator),
+      commands: { ...vibrationCommands },
+    },
+    guide: {
+      skippedSteps: [...skippedGuideSteps],
+    },
     chatterEventsTotal: chatterTotal,
     totalPressCount: [...pressCountByButton.values()].reduce((sum, n) => sum + n, 0),
     chatterByButton: [...chatterByButton.entries()]
@@ -1363,6 +1599,15 @@ function asymmetryPercent(calibrationText) {
 
 function computeDiagnosticVerdict(report) {
   const items = [];
+
+  if (report.guide?.skippedSteps?.length) {
+    const labels = report.guide.skippedSteps.map((id) => GUIDE_STEPS.find((step) => step.id === id)?.label || id);
+    items.push({
+      status: "neutral",
+      title: "Étapes passées",
+      text: `${labels.join(", ")} : ces étapes ont été passées volontairement et restent non testées dans cette synthèse.`,
+    });
+  }
 
   if (!report.gamepad) {
     items.push({ status: "bad", title: "Manette", text: "Aucune manette connectée au moment de l'export." });
@@ -1448,6 +1693,32 @@ function computeDiagnosticVerdict(report) {
               : `Léger bruit détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu), à surveiller mais pas encore franchement anormal.`,
       });
     }
+  }
+
+  const vibration = report.vibration || { supported: false, commands: {} };
+  if (!vibration.supported) {
+    items.push({
+      status: "ok",
+      label: "Non applicable",
+      title: "Vibrations",
+      text: "La commande de vibration n'est pas exposée par cette manette ou ce navigateur ; cette vérification ne bloque pas le diagnostic.",
+    });
+  } else if (vibration.commands.strong !== "complete" || vibration.commands.weak !== "complete") {
+    const failed = [vibration.commands.strong, vibration.commands.weak].includes("error");
+    items.push({
+      status: "neutral",
+      title: "Vibrations",
+      text: failed
+        ? "Au moins une commande de vibration a échoué ou été interrompue. Réessayez en gardant l'onglet visible."
+        : "Les commandes de vibration n'ont pas encore été envoyées aux deux moteurs.",
+    });
+  } else {
+    items.push({
+      status: "ok",
+      label: "Commandes envoyées",
+      title: "Vibrations",
+      text: "Les commandes à 100 % pendant 600 ms ont été envoyées aux deux moteurs. L'application ne peut pas confirmer la force réellement produite.",
+    });
   }
 
   if (report.totalPressCount < 20) {
@@ -1592,7 +1863,7 @@ function pdfVerdictRow(doc, item, y) {
   doc.setFont(undefined, "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(...PDF_STATUS_COLORS[item.status]);
-  doc.text(PDF_STATUS_LABELS[item.status], PDF_MARGIN + 7 + titleWidth + 3, y + 3.2);
+  doc.text(item.label?.toUpperCase() || PDF_STATUS_LABELS[item.status], PDF_MARGIN + 7 + titleWidth + 3, y + 3.2);
   y += 5.5;
 
   doc.setFontSize(9);
@@ -1808,7 +2079,16 @@ function buildDiagnosticPdf(report) {
     triggersEndY = Math.max(triggersEndY, cy);
   }
   doc.setFont(undefined, "normal");
-  y = pdfDivider(doc, triggersEndY + 3);
+  const vibrationText = !report.vibration?.supported
+    ? "Vibrations : non applicables avec cette manette ou ce navigateur."
+    : report.vibration.commands.strong === "complete" && report.vibration.commands.weak === "complete"
+      ? "Commandes de vibration envoyées aux deux moteurs à 100 % pendant 600 ms. La force réellement produite n'est pas mesurable par l'application."
+      : "Commandes de vibration incomplètes ou interrompues ; aucune conclusion matérielle n'est possible.";
+  doc.setFontSize(8.5);
+  doc.setTextColor(...PDF_MUTED);
+  const vibrationLines = doc.splitTextToSize(vibrationText, PDF_CONTENT_WIDTH - 4);
+  doc.text(vibrationLines, PDF_MARGIN + 2, triggersEndY + 3);
+  y = pdfDivider(doc, triggersEndY + 4 + vibrationLines.length * 4);
 
   y = pdfEnsureSpace(doc, y, 32);
   y = pdfPanelHeader(doc, "Doubles déclenchements observés", y, PDF_ACCENT);
@@ -1973,6 +2253,8 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
 
   mashTest = null;
   lastMashResults = null;
+  skippedGuideSteps.clear();
+  guideStepIndex = 0;
 
   document.getElementById("leftCalibReset").click();
   document.getElementById("rightCalibReset").click();
@@ -1990,9 +2272,13 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
 
   triggerStability.lt.reset();
   triggerStability.rt.reset();
+  triggerGuideStates.lt = "idle";
+  triggerGuideStates.rt = "idle";
+  vibrationCommands.strong = "pending";
+  vibrationCommands.weak = "pending";
   renderTriggerStability("lt", performance.now());
   renderTriggerStability("rt", performance.now());
-  if (GUIDE_STEPS[guideStepIndex].id === "summary") renderGuidedSummary();
+  renderGuide();
 });
 
 let lastFrameTime = performance.now();
@@ -2032,6 +2318,8 @@ function loop() {
       neutralDrift.right.reset();
       triggerStability.lt.reset();
       triggerStability.rt.reset();
+      vibrationCommands.strong = "pending";
+      vibrationCommands.weak = "pending";
       const controllerType = detectControllerType(pad.id);
       if (controllerType !== currentSilhouetteType) {
         currentSilhouetteType = controllerType;
@@ -2052,6 +2340,7 @@ function loop() {
         lastMashResults = mashTest.results;
         renderMashSummaryTable(lastMashResults);
         showMashScreen("summary");
+        renderGuide();
       } else {
         updateMashRunningUI(now);
       }
