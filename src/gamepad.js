@@ -1,6 +1,6 @@
 export const LABEL_SETS = {
-  xbox: ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "LS", "RS", "Up", "Down", "Left", "Right", "Guide"],
-  playstation: ["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Share", "Options", "L3", "R3", "Up", "Down", "Left", "Right", "PS", "Touchpad"],
+  xbox: ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "Stick G", "Stick D", "Haut", "Bas", "Gauche", "Droite", "Guide"],
+  playstation: ["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Share", "Options", "L3", "R3", "Haut", "Bas", "Gauche", "Droite", "PS", "Pavé tactile"],
   generic: Array.from({ length: 18 }, (_, i) => `B${i}`),
 };
 

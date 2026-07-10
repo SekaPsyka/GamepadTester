@@ -5,23 +5,24 @@ App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette
 ## Conventions
 
 - **UI et commentaires en français.** Le code (noms de variables/fonctions) reste en anglais.
-- Vanilla JS, modules ES (`type: "module"`), pas de framework, pas de bundler de tests.
+- Vanilla JS, modules ES (`type: "module"`), pas de framework. Les tests de logique utilisent le runner natif `node --test --test-isolation=none` via `npm test` (l'isolation évite les sous-processus bloqués par le bac à sable Windows).
 - Commentaires uniquement pour expliquer un *pourquoi* non évident (seuils choisis, contournement, invariant) — jamais pour décrire ce que fait le code. Voir `gamepad.js` (`NEUTRAL_DRIFT_WARN_THRESHOLD`, `CHATTER_THRESHOLD_MS`) pour le ton attendu.
 - Détection du type de manette centralisée dans `detectControllerType()` (`src/gamepad.js`) — toujours réutiliser cette fonction plutôt que dupliquer une regex sur `pad.id`.
 - État pressé/relâché (digital ou gâchette analogique) centralisé dans `isButtonPressed()` (`src/gamepad.js`) — gère l'hystérésis sur LT/RT (index 6/7), toujours réutiliser plutôt que comparer `btn.value`/`btn.pressed` à la main.
-- Trackers de mesure passive en arrière-plan (pas de bouton "Démarrer le test" dédié) suivent le pattern `NeutralDriftTracker`/`TriggerStabilityTracker` (`src/gamepad.js`) : fenêtre glissante d'échantillons, ne purger le plus vieil échantillon que si le suivant couvre déjà seul la fenêtre (sinon, avec un pas d'échantillonnage régulier, l'âge du plus vieil échantillon oscille indéfiniment juste sous le seuil sans jamais l'atteindre).
+- Trackers à fenêtre glissante (`NeutralDriftTracker`/`TriggerStabilityTracker` dans `src/gamepad.js`) : ne purger le plus vieil échantillon que si le suivant couvre déjà seul la fenêtre. Le point neutre est déclenché explicitement par l'utilisateur pendant trois secondes ; la stabilité des gâchettes reste mesurée pendant leur maintien.
 - Mapping standard Gamepad API : boutons 0-3 = A/B/X/Y (Croix/Cercle/Carré/Triangle), 4-5 = LB/RB (L1/R1), 6-7 = LT/RT (L2/R2), 8-9 = View/Menu (Share/Options), 10-11 = clic stick gauche/droit, 12-15 = D-pad haut/bas/gauche/droite, 16 = Guide/PS. `pad.axes[0..1]` = stick gauche X/Y, `[2..3]` = stick droit X/Y.
 - Interface entièrement responsive (`src/style.css`, breakpoints à 960px/720px/560px/360px) — toute nouvelle UI doit rester utilisable sur mobile (cibles tactiles ≥44px, pas d'overflow horizontal).
 
 ## Structure
 
-- `src/main.js` — point d'entrée, construit le DOM, boucle `requestAnimationFrame`, orchestre tous les modules. Contient aussi l'export du rapport de diagnostic en PDF (`buildDiagnosticReport()` collecte l'état courant, `buildDiagnosticPdf()` le met en page via `jspdf`/`jspdf-autotable`, seules dépendances npm directes du projet).
+- `src/main.js` — point d'entrée, construit le DOM, orchestre le diagnostic guidé / mode laboratoire et la boucle `requestAnimationFrame`. Contient aussi l'export du rapport de diagnostic en PDF (`buildDiagnosticReport()` collecte l'état courant, `buildDiagnosticPdf()` le met en page via `jspdf`/`jspdf-autotable`, seules dépendances npm directes du projet).
 - `src/gamepad.js` — accès Gamepad API, détection de type de manette, labels de boutons, dead zone, état pressé digital/analogique (`isButtonPressed`), détection de drift du point neutre (`NeutralDriftTracker`) et de stabilité des gâchettes tenues à un palier (`TriggerStabilityTracker`).
 - `src/controllerSilhouette.js` — silhouette visuelle (image SVG Xbox/PlayStation + zones de surbrillance positionnées en % du viewBox d'origine). Layouts de boutons/sticks codés en dur dans `LAYOUTS`. Se dégrade proprement (frame caché) pour les manettes "generic".
-- `src/mashTest.js` — diagnostic des boutons par mashing (chatter, double-déclenchement, boutons lents).
+- `src/mashTest.js` — diagnostic répété des boutons (chatter / doubles déclenchements involontaires et fiabilité de la session).
 - `src/themes.js` / `src/storage.js` — thèmes de couleur (CSS custom properties) et persistance `localStorage`.
 - `src/style.css` — feuille de style unique, pas de CSS modules.
 - `src/assets/controllers/*.svg` — assets visuels de manette, voir `CREDITS.md` (licence MIT, Gamepad Asset Pack).
+- `test/*.test.js` — tests déterministes des zones mortes, de l'hystérésis, du point neutre, des gâchettes et du diagnostic répété des boutons.
 
 ## Tester sans manette physique
 

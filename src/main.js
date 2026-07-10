@@ -17,7 +17,7 @@ import {
 } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
-import { MashSequenceTest, gradeForChatter, chatterRate, buildMashVerdict } from "./mashTest.js";
+import { MashSequenceTest, buildMashQueue, gradeForChatter, chatterRate, buildMashVerdict } from "./mashTest.js";
 import { createSilhouette, setSilhouetteType, updateSilhouette } from "./controllerSilhouette.js";
 
 const app = document.getElementById("app");
@@ -36,9 +36,9 @@ app.innerHTML = `
         <label class="field">Manette<select id="padSelect"><option value="">Aucune manette</option></select></label>
       </div>
       <div class="header-actions">
-        <button id="openMashTestBtn" class="btn-highlight" title="Teste chaque bouton un par un: appuyez à un rythme rapide et régulier pendant la durée choisie pour détecter chatter, doubles-déclenchements et boutons lents">Diagnostic des boutons</button>
+        <button id="openMashTestBtn" class="btn-highlight" title="Teste chaque bouton avec des appuis rapides et réguliers pour repérer les doubles déclenchements involontaires">Diagnostic des boutons</button>
         <button id="exportReportBtn" title="Exporte un rapport de diagnostic en PDF avec l'état actuel de la manette">Exporter rapport (PDF)</button>
-        <button id="resetDataBtn" class="danger" title="Réinitialise la latence, le chatter, les calibrations, le drift, l'historique et les captures filaire/sans-fil">Réinitialiser les données</button>
+        <button id="resetDataBtn" class="danger" title="Réinitialise les calibrations, le drift, les mesures de gâchettes, les boutons et l'historique">Réinitialiser les données</button>
       </div>
     </div>
   </header>
@@ -49,15 +49,60 @@ app.innerHTML = `
     <p>Branchez une manette filaire ou appairez-la en Bluetooth, puis appuyez sur un bouton pour la réveiller.</p>
   </div>
 
+  <section class="guide-shell" id="guideShell" aria-labelledby="guideTitle">
+    <div class="mode-switch" role="group" aria-label="Mode d'affichage">
+      <button class="mode-switch-button active" type="button" data-app-mode="guided" aria-pressed="true">Diagnostic guidé</button>
+      <button class="mode-switch-button" type="button" data-app-mode="lab" aria-pressed="false">Mode laboratoire</button>
+    </div>
+    <div class="guide-main">
+      <div class="guide-copy">
+        <span class="guide-kicker" id="guideKicker">Étape 1 sur 5 · Connexion</span>
+        <h2 id="guideTitle">Vérifiez d'abord la manette détectée</h2>
+        <p id="guideDescription">L'application commence par vérifier l'identité, le mapping et les capacités exposées par le navigateur.</p>
+      </div>
+      <div class="guide-progress" aria-hidden="true">
+        <span id="guideProgressLabel">20 %</span>
+        <div><i id="guideProgressBar"></i></div>
+      </div>
+    </div>
+    <nav class="guide-steps" aria-label="Étapes du diagnostic">
+      <button type="button" data-guide-target="overview" class="active" aria-current="step"><span>1</span>Connexion</button>
+      <button type="button" data-guide-target="sticks"><span>2</span>Sticks</button>
+      <button type="button" data-guide-target="triggers"><span>3</span>Gâchettes</button>
+      <button type="button" data-guide-target="buttons"><span>4</span>Boutons</button>
+      <button type="button" data-guide-target="summary"><span>5</span>Résultats</button>
+    </nav>
+    <div class="guide-actions">
+      <button type="button" id="guidePrevBtn" disabled>Étape précédente</button>
+      <button type="button" id="guideContextAction" class="guide-context-action hidden"></button>
+      <button type="button" id="guideNextBtn" class="btn-highlight">Continuer vers les sticks</button>
+    </div>
+  </section>
+
   <div class="grid" id="grid">
-    <section class="panel">
+    <section class="panel device-panel span-2" data-guide-section="overview">
+      <div class="device-panel-copy">
+        <span class="panel-kicker">Contrôle de compatibilité</span>
+        <h2>Manette détectée</h2>
+        <strong id="deviceName">Aucune manette</strong>
+        <p id="deviceMapping">Connectez une manette pour vérifier son mapping.</p>
+        <div class="device-facts">
+          <span id="deviceButtons">— boutons</span>
+          <span id="deviceAxes">— axes</span>
+          <span id="deviceSupport">Compatibilité inconnue</span>
+        </div>
+      </div>
+      <div class="device-visual" id="silhouetteContainer"></div>
+    </section>
+
+    <section class="panel" data-guide-section="sticks">
       <h2>Joystick gauche</h2>
       <div class="stick-row">
-        <canvas class="stick" id="leftCanvas" width="180" height="180"></canvas>
+        <canvas class="stick" id="leftCanvas" width="180" height="180" aria-label="Position du joystick gauche"></canvas>
         <div class="sliders" style="flex:1">
-          <label>Dead zone intérieure: <span class="mono" id="leftInnerVal"></span></label>
+          <label for="leftInner">Zone morte intérieure : <span class="mono" id="leftInnerVal"></span></label>
           <input type="range" id="leftInner" min="0" max="0.9" step="0.01" value="0.1" />
-          <label>Dead zone extérieure: <span class="mono" id="leftOuterVal"></span></label>
+          <label for="leftOuter">Zone morte extérieure : <span class="mono" id="leftOuterVal"></span></label>
           <input type="range" id="leftOuter" min="0.1" max="1" step="0.01" value="0.95" />
           <div class="coord">
             Brut: <b class="mono" id="leftRaw">0.00, 0.00</b><br/>
@@ -68,19 +113,19 @@ app.innerHTML = `
             <button id="leftCalibReset" class="danger">Réinitialiser</button>
           </div>
           <p class="note" id="leftCalibResult"></p>
-          <p class="note" id="leftNeutralResult" title="Point de repos réel du stick, mesuré automatiquement quand il reste stable sans intervention. Un écart par rapport à (0,0) peut indiquer un drift naissant.">Point neutre: mesure en cours...</p>
+          <p class="note" id="leftNeutralResult">Point neutre : non testé</p>
         </div>
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" data-guide-section="sticks">
       <h2>Joystick droit</h2>
       <div class="stick-row">
-        <canvas class="stick" id="rightCanvas" width="180" height="180"></canvas>
+        <canvas class="stick" id="rightCanvas" width="180" height="180" aria-label="Position du joystick droit"></canvas>
         <div class="sliders" style="flex:1">
-          <label>Dead zone intérieure: <span class="mono" id="rightInnerVal"></span></label>
+          <label for="rightInner">Zone morte intérieure : <span class="mono" id="rightInnerVal"></span></label>
           <input type="range" id="rightInner" min="0" max="0.9" step="0.01" value="0.1" />
-          <label>Dead zone extérieure: <span class="mono" id="rightOuterVal"></span></label>
+          <label for="rightOuter">Zone morte extérieure : <span class="mono" id="rightOuterVal"></span></label>
           <input type="range" id="rightOuter" min="0.1" max="1" step="0.01" value="0.95" />
           <div class="coord">
             Brut: <b class="mono" id="rightRaw">0.00, 0.00</b><br/>
@@ -91,38 +136,46 @@ app.innerHTML = `
             <button id="rightCalibReset" class="danger">Réinitialiser</button>
           </div>
           <p class="note" id="rightCalibResult"></p>
-          <p class="note" id="rightNeutralResult" title="Point de repos réel du stick, mesuré automatiquement quand il reste stable sans intervention. Un écart par rapport à (0,0) peut indiquer un drift naissant.">Point neutre: mesure en cours...</p>
+          <p class="note" id="rightNeutralResult">Point neutre : non testé</p>
         </div>
       </div>
     </section>
 
-    <section class="panel span-2">
-      <h2>Stabilité des sticks (axe X, détection de drift)</h2>
+    <section class="panel span-2" data-guide-section="sticks">
+      <div class="panel-heading-row">
+        <div>
+          <span class="panel-kicker">Mesure guidée</span>
+          <h2>Point neutre et stabilité des sticks</h2>
+        </div>
+        <button type="button" id="measureNeutralBtn">Mesurer le point neutre</button>
+      </div>
+      <p class="measurement-instruction" id="neutralCaptureStatus">Posez la manette à plat, relâchez les sticks, puis lancez une mesure de trois secondes.</p>
       <p class="note" style="margin:0 0 6px">Gauche</p>
-      <canvas class="graph" id="driftGraphLeft" width="1200" height="70"></canvas>
+      <canvas class="graph" id="driftGraphLeft" width="1200" height="70" aria-label="Stabilité horizontale du joystick gauche"></canvas>
       <p class="note" style="margin:14px 0 6px">Droit</p>
-      <canvas class="graph" id="driftGraphRight" width="1200" height="70"></canvas>
-      <p class="note">Au repos, ces lignes doivent rester plates au centre. Des oscillations indiquent du stick drift.</p>
+      <canvas class="graph" id="driftGraphRight" width="1200" height="70" aria-label="Stabilité horizontale du joystick droit"></canvas>
+      <p class="note">Ces courbes montrent la stabilité pendant la mesure. Un résultat n'est validé que si la manette reste immobile.</p>
     </section>
 
-    <section class="panel panel--trigger-vibration">
+    <section class="panel panel--trigger-vibration span-2" data-guide-section="triggers">
       <h2>Gâchettes &amp; vibration</h2>
+      <p class="measurement-instruction">Maintenez chaque gâchette à mi-course pendant cinq secondes. La mesure décrit la régularité du signal, sans prétendre certifier l'état mécanique du capteur.</p>
       <div class="trigger-gauges">
         <div class="trigger-gauge">
           <div class="trigger-label"><span>LT</span><span class="mono" id="ltVal">0%</span></div>
           <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="ltBar"></div></div>
-          <p class="note" id="ltStabilityResult" title="Maintenez la gâchette à mi-course quelques instants: une valeur qui saute par paliers irréguliers plutôt que de rester lisse trahit un capteur usé.">Stabilité: maintenez à mi-course pour mesurer...</p>
+          <p class="note" id="ltStabilityResult" title="Maintenez la gâchette à mi-course pour observer la régularité du signal exposé par le navigateur.">Stabilité : maintenez à mi-course pour mesurer...</p>
         </div>
         <div class="trigger-gauge">
           <div class="trigger-label"><span>RT</span><span class="mono" id="rtVal">0%</span></div>
           <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="rtBar"></div></div>
-          <p class="note" id="rtStabilityResult" title="Maintenez la gâchette à mi-course quelques instants: une valeur qui saute par paliers irréguliers plutôt que de rester lisse trahit un capteur usé.">Stabilité: maintenez à mi-course pour mesurer...</p>
+          <p class="note" id="rtStabilityResult" title="Maintenez la gâchette à mi-course pour observer la régularité du signal exposé par le navigateur.">Stabilité : maintenez à mi-course pour mesurer...</p>
         </div>
       </div>
 
       <p class="note" style="margin:0 0 6px">Historique des gâchettes (<span class="legend-dot legend-dot--accent"></span> LT, <span class="legend-dot legend-dot--accent-alt"></span> RT)</p>
       <canvas class="graph" id="triggerHistoryGraph" width="1200" height="70"></canvas>
-      <p class="note" title="Une gâchette analogique de qualité varie en douceur. Des marches d'escalier ou des sauts brusques dans ce tracé trahissent une faible résolution du capteur ou un potentiomètre qui commence à dérailler.">Un tracé en escalier ou en dents de scie indique une résolution analogique faible ou un capteur de gâchette usé.</p>
+      <p class="note">Un tracé irrégulier mérite une seconde mesure dans les mêmes conditions avant toute conclusion sur le capteur.</p>
 
       <div class="vib-section">
         <div class="vib-section-head">
@@ -133,6 +186,7 @@ app.innerHTML = `
         <div class="motor-cards">
           <div class="motor-card" id="motorCardStrong">
             <div class="motor-card-head"><span>Moteur gauche</span><span class="note">basse fréq. / grave</span></div>
+            <label class="sr-only" for="vibStrongLive">Intensité continue du moteur gauche</label>
             <input type="range" id="vibStrongLive" min="0" max="1" step="0.01" value="0" />
             <div class="motor-card-foot">
               <span class="mono" id="vibStrongLiveVal">0%</span>
@@ -141,6 +195,7 @@ app.innerHTML = `
           </div>
           <div class="motor-card" id="motorCardWeak">
             <div class="motor-card-head"><span>Moteur droit</span><span class="note">haute fréq. / aiguë</span></div>
+            <label class="sr-only" for="vibWeakLive">Intensité continue du moteur droit</label>
             <input type="range" id="vibWeakLive" min="0" max="1" step="0.01" value="0" />
             <div class="motor-card-foot">
               <span class="mono" id="vibWeakLiveVal">0%</span>
@@ -156,20 +211,19 @@ app.innerHTML = `
           <button id="vibStop" class="danger hidden">Tout arrêter</button>
         </div>
         <div class="vib-footnotes">
-          <p class="note">Les curseurs produisent une vibration continue (jusqu'à "Tout arrêter"). Les boutons "Tester" et les préréglages envoient une impulsion de 600 ms.</p>
+          <p class="note">L'application peut envoyer une commande de vibration, mais elle ne peut pas mesurer la force réelle des moteurs. Confirmez le résultat selon ce que vous ressentez.</p>
           <p class="note" id="vibNote"></p>
         </div>
       </div>
     </section>
 
-    <section class="panel">
-      <h2>Boutons <span class="note" style="display:inline">(latence moyenne: <span id="avgLatency" class="value mono" style="color:var(--accent)">n/a</span>, chatter détecté: <span id="chatterCount" class="value mono" style="color:var(--accent-alt)">0</span>)</span></h2>
-      <div id="silhouetteContainer"></div>
+    <section class="panel span-2" data-guide-section="buttons">
+      <h2>Boutons <span class="note" style="display:inline">(doubles déclenchements détectés : <span id="chatterCount" class="value mono" style="color:var(--accent-alt)">0</span>)</span></h2>
       <div class="buttons-grid" id="buttonsGrid"></div>
-      <p class="note" title="Chatter: un bouton se déclenche plusieurs fois pour une seule pression physique, souvent dû à l'usure d'un switch/contact.">Le chatter est détecté quand un bouton se relâche puis se ré-enfonce en moins de 60 ms, trop rapide pour une vraie double-pression humaine.</p>
+      <p class="note">Un double déclenchement involontaire, aussi appelé chatter, est signalé lorsqu'un bouton se relâche puis se réenfonce en moins de 60 ms. Un événement isolé doit toujours être confirmé par le diagnostic guidé.</p>
     </section>
 
-    <section class="panel span-2 press-history-panel">
+    <section class="panel span-2 press-history-panel" data-guide-section="buttons">
       <h2>Historique des appuis</h2>
       <div class="press-log-frame">
         <div class="press-log-columns" aria-hidden="true">
@@ -177,45 +231,23 @@ app.innerHTML = `
           <span>Bouton</span>
           <span class="press-log-heading-value">Valeur</span>
           <span class="press-log-heading-interval">Depuis précédent</span>
-          <span>Latence</span>
           <span>Diagnostic</span>
         </div>
         <div id="pressLog" class="press-log" role="log" aria-live="polite" aria-label="Historique des dix derniers appuis"></div>
       </div>
-      <p class="note">10 derniers appuis, avec latence détectée (delta entre le timestamp matériel de la manette et la réception navigateur, si supporté).</p>
+      <p class="note">Les dix derniers appuis sont conservés pour repérer les doubles déclenchements et vérifier le déroulement du test.</p>
     </section>
 
-    <section class="panel span-2 latency-panel">
-      <div class="latency-heading">
+    <section class="panel span-2 results-panel" data-guide-section="summary">
+      <div class="results-heading">
         <div>
-          <h2>Mesure de latence</h2>
-          <p>Testez librement une connexion. Si vous mesurez les deux, leur écart sera calculé automatiquement.</p>
+          <span class="panel-kicker">Synthèse traçable</span>
+          <h2>Résultats du diagnostic</h2>
         </div>
-        <span class="latency-protocol">5 secondes · 8 appuis minimum</span>
+        <span class="confidence-chip" id="summaryConfidence">Diagnostic incomplet</span>
       </div>
-      <div class="compare-row">
-        <article class="compare-col" id="wiredCard" data-state="idle">
-          <div class="compare-col-heading">
-            <svg class="connection-icon" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 16h16m0-5v10m0-8h6v6h-6"/></svg>
-            <div><h3>Filaire</h3><span>Câble USB</span></div>
-          </div>
-          <div class="compare-readout" id="wiredSnapshot" aria-live="polite"></div>
-          <div class="compare-pulses" id="wiredPulses" aria-hidden="true">${Array.from({ length: 8 }, () => "<i></i>").join("")}</div>
-          <p class="compare-progress" id="wiredProgress">Objectif : 8 appuis minimum</p>
-          <button class="compare-action" id="captureWired">Démarrer le test filaire</button>
-        </article>
-        <article class="compare-col" id="wirelessCard" data-state="idle">
-          <div class="compare-col-heading">
-            <svg class="connection-icon" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 13a14 14 0 0 1 20 0M10 18a8.5 8.5 0 0 1 12 0M14 23a3 3 0 0 1 4 0"/></svg>
-            <div><h3>Sans-fil</h3><span>Bluetooth ou récepteur</span></div>
-          </div>
-          <div class="compare-readout" id="wirelessSnapshot" aria-live="polite"></div>
-          <div class="compare-pulses" id="wirelessPulses" aria-hidden="true">${Array.from({ length: 8 }, () => "<i></i>").join("")}</div>
-          <p class="compare-progress" id="wirelessProgress">Objectif : 8 appuis minimum</p>
-          <button class="compare-action" id="captureWireless">Démarrer le test sans-fil</button>
-        </article>
-      </div>
-      <div class="compare-summary" id="compareDelta" aria-live="polite"></div>
+      <p class="measurement-instruction" id="summaryLead">Les résultats distinguent les mesures validées, les points à confirmer et les tests non réalisés.</p>
+      <div class="results-grid" id="summaryResults" aria-live="polite"></div>
     </section>
   </div>
 
@@ -224,15 +256,15 @@ app.innerHTML = `
     <a href="https://github.com/SekaPsyka/GamepadTester" target="_blank" rel="noopener noreferrer">Code source sur GitHub</a>
   </footer>
 
-  <div class="mash-overlay" id="mashOverlay">
-    <div class="mash-panel">
+  <div class="mash-overlay" id="mashOverlay" role="dialog" aria-modal="true" aria-labelledby="mashDialogTitle" aria-hidden="true">
+    <div class="mash-panel" tabindex="-1">
       <div id="mashSetup">
-        <h2>Diagnostic des boutons (mashing)</h2>
-        <p class="note">Le test passe en revue chaque bouton détecté du mapping actuel. Pour chacun, appuyez de façon répétée pendant la durée choisie, le chrono démarre à votre premier appui. Permet de repérer le chatter, les doubles-déclenchements fantômes et les boutons lents à revenir en position.</p>
+        <h2 id="mashDialogTitle">Diagnostic des boutons</h2>
+        <p class="note">Le test passe en revue les boutons utiles au diagnostic. Le bouton système Guide/PS est volontairement exclu, car il peut être intercepté par le système. Appuyez rapidement mais nettement sur le bouton demandé ; le chrono démarre au premier appui.</p>
         <div class="mash-optimal-conditions">
           <h3>Pour un résultat fiable</h3>
           <ul>
-            <li>Appuyez à un rythme <strong>rapide mais net et régulier</strong>, en relâchant bien chaque bouton entre deux appuis, plutôt que de mashing brut au maximum de vitesse.</li>
+            <li>Appuyez à un rythme <strong>rapide, net et régulier</strong>, en relâchant bien chaque bouton entre deux appuis.</li>
             <li>Batterie/piles pleines, ou manette branchée en filaire.</li>
             <li>Privilégiez une connexion filaire ; en sans-fil, restez proche du récepteur.</li>
             <li>Fermez les autres applications ou onglets qui pourraient utiliser la manette en même temps.</li>
@@ -277,12 +309,183 @@ const dot = document.getElementById("dot");
 const padName = document.getElementById("padName");
 const emptyState = document.getElementById("emptyState");
 const grid = document.getElementById("grid");
+const guideShell = document.getElementById("guideShell");
+const guideKicker = document.getElementById("guideKicker");
+const guideTitle = document.getElementById("guideTitle");
+const guideDescription = document.getElementById("guideDescription");
+const guideProgressLabel = document.getElementById("guideProgressLabel");
+const guideProgressBar = document.getElementById("guideProgressBar");
+const guidePrevBtn = document.getElementById("guidePrevBtn");
+const guideNextBtn = document.getElementById("guideNextBtn");
+const guideContextAction = document.getElementById("guideContextAction");
+const guideStepButtons = [...document.querySelectorAll("[data-guide-target]")];
+const modeButtons = [...document.querySelectorAll("[data-app-mode]")];
+const guideSections = [...document.querySelectorAll("[data-guide-section]")];
+const exportReportBtn = document.getElementById("exportReportBtn");
+const openMashTestBtn = document.getElementById("openMashTestBtn");
+
+const GUIDE_STEPS = [
+  {
+    id: "overview",
+    label: "Connexion",
+    title: "Vérifiez d'abord la manette détectée",
+    description: "L'application contrôle l'identité, le mapping et les capacités réellement exposées par le navigateur.",
+  },
+  {
+    id: "sticks",
+    label: "Sticks",
+    title: "Mesurez le point neutre et l'amplitude",
+    description: "Posez d'abord la manette sans toucher aux sticks, puis effectuez les rotations demandées pour distinguer décalage et amplitude incomplète.",
+    action: "Mesurer le point neutre",
+  },
+  {
+    id: "triggers",
+    label: "Gâchettes",
+    title: "Contrôlez les gâchettes et les vibrations",
+    description: "Maintenez chaque gâchette à mi-course pendant cinq secondes, puis vérifiez séparément les deux moteurs de vibration.",
+  },
+  {
+    id: "buttons",
+    label: "Boutons",
+    title: "Recherchez les doubles déclenchements",
+    description: "Le test guidé exige un nombre minimal d'appuis et invalide les mesures perturbées par un ralentissement du navigateur.",
+    action: "Lancer le diagnostic des boutons",
+  },
+  {
+    id: "summary",
+    label: "Résultats",
+    title: "Lisez les résultats avec leur niveau de confiance",
+    description: "Un test non réalisé reste indiqué comme tel : l'application ne conclut jamais à un bon état à partir de données manquantes.",
+    action: "Exporter le rapport PDF",
+  },
+];
+
+let appMode = "guided";
+let guideStepIndex = 0;
+let isPadConnected = null;
+
+function renderGuidedSummary() {
+  const report = buildDiagnosticReport();
+  const items = computeDiagnosticVerdict(report);
+  const summaryResults = document.getElementById("summaryResults");
+  const summaryConfidence = document.getElementById("summaryConfidence");
+  const summaryLead = document.getElementById("summaryLead");
+  const hasBad = items.some((item) => item.status === "bad");
+  const hasWarn = items.some((item) => item.status === "warn");
+  const hasUntested = items.some((item) => item.status === "neutral");
+
+  const summaryState = hasBad
+    ? { status: "bad", label: "Problème probable", lead: "Au moins un résultat mérite une vérification matérielle ou un nouveau test." }
+    : hasWarn
+      ? { status: "warn", label: "Points à confirmer", lead: "Certaines mesures sont atypiques ou demandent une seconde tentative." }
+      : hasUntested
+        ? { status: "neutral", label: "Diagnostic incomplet", lead: "Terminez les tests indiqués comme non réalisés avant de conclure." }
+        : { status: "ok", label: "Mesures cohérentes", lead: "Aucun problème n'a été détecté dans les tests réalisés dans de bonnes conditions." };
+
+  summaryConfidence.dataset.status = summaryState.status;
+  summaryConfidence.textContent = summaryState.label;
+  summaryLead.textContent = summaryState.lead;
+  summaryResults.replaceChildren();
+
+  for (const item of items) {
+    const card = document.createElement("article");
+    card.className = `result-card result-card--${item.status}`;
+    const status = document.createElement("span");
+    status.className = "result-card-status";
+    status.textContent = item.status === "ok" ? "Mesure cohérente" : item.status === "warn" ? "À confirmer" : item.status === "bad" ? "Problème probable" : "Non testé";
+    const title = document.createElement("h3");
+    title.textContent = item.title;
+    const text = document.createElement("p");
+    text.textContent = item.text;
+    card.append(status, title, text);
+    summaryResults.appendChild(card);
+  }
+}
+
+function renderGuide() {
+  const step = GUIDE_STEPS[guideStepIndex];
+  const progress = Math.round(((guideStepIndex + 1) / GUIDE_STEPS.length) * 100);
+  guideKicker.textContent = `Étape ${guideStepIndex + 1} sur ${GUIDE_STEPS.length} · ${step.label}`;
+  const waitingForPad = !isPadConnected && step.id === "overview";
+  guideTitle.textContent = waitingForPad ? "Connectez une manette pour commencer" : step.title;
+  guideDescription.textContent = waitingForPad
+    ? "Branchez-la en USB ou associez-la en Bluetooth, puis appuyez sur un bouton pour que le navigateur la détecte."
+    : step.description;
+  guideProgressLabel.textContent = `${progress} %`;
+  guideProgressBar.style.width = `${progress}%`;
+  guidePrevBtn.disabled = guideStepIndex === 0;
+  guideNextBtn.disabled = !isPadConnected || guideStepIndex === GUIDE_STEPS.length - 1;
+  guideNextBtn.textContent = guideStepIndex < GUIDE_STEPS.length - 1 ? `Continuer vers ${GUIDE_STEPS[guideStepIndex + 1].label.toLowerCase()}` : "Diagnostic parcouru";
+
+  guideContextAction.classList.toggle("hidden", !step.action);
+  guideContextAction.textContent = step.action || "";
+
+  guideStepButtons.forEach((button, index) => {
+    const active = index === guideStepIndex;
+    button.classList.toggle("active", active);
+    button.toggleAttribute("aria-current", active);
+    button.disabled = !isPadConnected && index > 0;
+  });
+
+  guideSections.forEach((section) => {
+    const visible = appMode === "lab" || section.dataset.guideSection === step.id;
+    section.classList.toggle("guide-hidden", !visible);
+  });
+
+  guideShell.classList.toggle("guide-shell--lab", appMode === "lab");
+  document.body.dataset.appMode = appMode;
+  if (step.id === "summary" || appMode === "lab") renderGuidedSummary();
+}
+
+function setAppMode(mode) {
+  appMode = mode === "lab" ? "lab" : "guided";
+  modeButtons.forEach((button) => {
+    const active = button.dataset.appMode === appMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  renderGuide();
+}
+
+modeButtons.forEach((button) => button.addEventListener("click", () => setAppMode(button.dataset.appMode)));
+guideStepButtons.forEach((button, index) => button.addEventListener("click", () => {
+  guideStepIndex = index;
+  renderGuide();
+}));
+guidePrevBtn.addEventListener("click", () => {
+  guideStepIndex = Math.max(0, guideStepIndex - 1);
+  renderGuide();
+});
+guideNextBtn.addEventListener("click", () => {
+  guideStepIndex = Math.min(GUIDE_STEPS.length - 1, guideStepIndex + 1);
+  renderGuide();
+});
+guideContextAction.addEventListener("click", () => {
+  const stepId = GUIDE_STEPS[guideStepIndex].id;
+  if (stepId === "sticks") startNeutralCapture();
+  if (stepId === "buttons") openMashTestBtn.click();
+  if (stepId === "summary") exportReportBtn.click();
+});
 
 function setConnectedUI(connected) {
+  if (isPadConnected === connected) return;
+  isPadConnected = connected;
   dot.classList.toggle("connected", connected);
   emptyState.classList.toggle("visible", !connected);
   grid.classList.toggle("disconnected", !connected);
-  if (!connected) padName.textContent = "Aucune manette détectée";
+  grid.toggleAttribute("inert", !connected);
+  grid.setAttribute("aria-hidden", String(!connected));
+  exportReportBtn.disabled = !connected;
+  openMashTestBtn.disabled = !connected;
+  if (!connected) {
+    padName.textContent = "Aucune manette détectée";
+    document.getElementById("deviceName").textContent = "Aucune manette";
+    document.getElementById("deviceMapping").textContent = "Connectez une manette pour vérifier son mapping.";
+    document.getElementById("deviceButtons").textContent = "— boutons";
+    document.getElementById("deviceAxes").textContent = "— axes";
+    document.getElementById("deviceSupport").textContent = "Compatibilité inconnue";
+  }
+  renderGuide();
 }
 setConnectedUI(false);
 
@@ -753,16 +956,20 @@ const neutralResultEls = {
   left: document.getElementById("leftNeutralResult"),
   right: document.getElementById("rightNeutralResult"),
 };
+const neutralCaptureStatus = document.getElementById("neutralCaptureStatus");
+const measureNeutralBtn = document.getElementById("measureNeutralBtn");
+const NEUTRAL_CAPTURE_DURATION_MS = 3000;
+let neutralCapture = null;
 
 function neutralDriftStatus(offset) {
-  if (!offset.measured) return { key: "na", label: "Point neutre: mesure en cours (relâchez le stick)..." };
+  if (!offset.measured) return { key: "na", label: "Point neutre : non testé" };
   if (offset.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD) {
     return {
       key: "fair",
-      label: `Point neutre décalé: ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)} (drift naissant possible)`,
+      label: `Point neutre décalé : ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)} (à confirmer)`,
     };
   }
-  return { key: "excellent", label: `Point neutre: ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)} (centré ✓)` };
+  return { key: "excellent", label: `Point neutre : ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)} (centré)` };
 }
 
 function renderNeutralDrift(side) {
@@ -774,6 +981,57 @@ function renderNeutralDrift(side) {
   return offset;
 }
 
+function finishNeutralCapture() {
+  const left = neutralDrift.left.getOffset();
+  const right = neutralDrift.right.getOffset();
+  const invalid = neutralCapture.maxFrameGapMs > 100 || !left.measured || !right.measured;
+  neutralCapture = null;
+  measureNeutralBtn.disabled = false;
+  guideContextAction.disabled = false;
+  measureNeutralBtn.textContent = "Mesurer le point neutre";
+
+  if (invalid) {
+    neutralDrift.left.reset();
+    neutralDrift.right.reset();
+    neutralCaptureStatus.textContent = "Mesure invalide : la manette a bougé ou le navigateur a ralenti. Recommencez sans toucher aux sticks.";
+    neutralCaptureStatus.dataset.status = "warn";
+  } else {
+    neutralCaptureStatus.textContent = "Mesure terminée sur trois secondes. Les résultats sont affichés pour chaque stick.";
+    neutralCaptureStatus.dataset.status = "ok";
+  }
+  renderNeutralDrift("left");
+  renderNeutralDrift("right");
+}
+
+function updateNeutralCapture(lx, ly, rx, ry, now, frameGapMs) {
+  if (!neutralCapture) return;
+  neutralCapture.maxFrameGapMs = Math.max(neutralCapture.maxFrameGapMs, frameGapMs);
+  neutralDrift.left.update(lx, ly, now);
+  neutralDrift.right.update(rx, ry, now);
+  const remainingMs = Math.max(0, neutralCapture.endAt - now);
+  const remainingSeconds = (remainingMs / 1000).toFixed(1);
+  neutralCaptureStatus.textContent = `Mesure en cours : ne touchez pas à la manette pendant encore ${remainingSeconds} s.`;
+  neutralCaptureStatus.dataset.status = "active";
+  measureNeutralBtn.textContent = `${remainingSeconds} s`;
+  renderNeutralDrift("left");
+  renderNeutralDrift("right");
+  if (remainingMs <= 0) finishNeutralCapture();
+}
+
+function startNeutralCapture() {
+  if (!getSelectedGamepad() || neutralCapture) return;
+  neutralDrift.left.reset();
+  neutralDrift.right.reset();
+  const now = performance.now();
+  neutralCapture = { endAt: now + NEUTRAL_CAPTURE_DURATION_MS, maxFrameGapMs: 0 };
+  measureNeutralBtn.disabled = true;
+  guideContextAction.disabled = true;
+  neutralCaptureStatus.textContent = "Mesure en cours : ne touchez plus à la manette.";
+  neutralCaptureStatus.dataset.status = "active";
+}
+
+measureNeutralBtn.addEventListener("click", startNeutralCapture);
+
 const triggerStability = {
   lt: new TriggerStabilityTracker(),
   rt: new TriggerStabilityTracker(),
@@ -784,18 +1042,18 @@ const triggerStabilityResultEls = {
 };
 
 function triggerStabilityStatus(result) {
-  if (!result.measured) return { key: "na", label: "Stabilité: maintenez à mi-course pour mesurer..." };
+  if (!result.measured) return { key: "na", label: "Stabilité : maintenez à mi-course pour mesurer..." };
   const grade = triggerStabilityGrade(result);
   const detail = `écart ${(result.range * 100).toFixed(1)}%, ${result.stepCount} saut(s)`;
   if (grade.key === "poor") {
-    return { key: "poor", label: `Stabilité: instable (${detail})` };
+    return { key: "poor", label: `Stabilité : instable (${detail})` };
   }
   if (grade.key === "fair") {
     return grade.isolated
-      ? { key: "fair", label: `Stabilité: écart isolé (${detail}), retestez pour confirmer` }
-      : { key: "fair", label: `Stabilité: léger bruit (${detail})` };
+      ? { key: "fair", label: `Stabilité : écart isolé (${detail}), retestez pour confirmer` }
+      : { key: "fair", label: `Stabilité : léger bruit (${detail})` };
   }
-  return { key: "excellent", label: `Stabilité: lisse (écart ${(result.range * 100).toFixed(1)}%) ✓` };
+  return { key: "excellent", label: `Stabilité : lisse (écart ${(result.range * 100).toFixed(1)} %) ✓` };
 }
 
 function renderTriggerStability(side, now) {
@@ -808,13 +1066,13 @@ function renderTriggerStability(side, now) {
   if (tracker.isAttempting()) {
     const remainingS = ((1 - tracker.getProgress(now)) * TRIGGER_REQUIRED_HOLD_MS) / 1000;
     el.textContent = result.measured
-      ? `Stabilité: nouvelle mesure en cours, maintenez encore ${remainingS.toFixed(1)}s...`
-      : `Stabilité: maintenez encore ${remainingS.toFixed(1)}s...`;
+      ? `Stabilité : nouvelle mesure en cours, maintenez encore ${remainingS.toFixed(1)} s...`
+      : `Stabilité : maintenez encore ${remainingS.toFixed(1)} s...`;
     el.className = "note mash-grade-na";
     return result;
   }
   if (!result.measured) {
-    el.textContent = "Stabilité: maintenez à mi-course pour mesurer...";
+    el.textContent = "Stabilité : maintenez à mi-course pour mesurer...";
     el.className = "note mash-grade-na";
     return result;
   }
@@ -836,9 +1094,11 @@ const mashCountEl = document.getElementById("mashCount");
 const mashSummaryTableEl = document.getElementById("mashSummaryTable");
 const mashSetupWarningEl = document.getElementById("mashSetupWarning");
 const mashStartBtnEl = document.getElementById("mashStartBtn");
+const mashPanelEl = mashOverlay.querySelector(".mash-panel");
 
 let mashTest = null;
 let lastMashResults = null;
+let mashReturnFocus = null;
 
 function showMashScreen(screen) {
   mashSetupEl.classList.toggle("hidden", screen !== "setup");
@@ -848,6 +1108,10 @@ function showMashScreen(screen) {
 
 function closeMashOverlay() {
   mashOverlay.classList.remove("visible");
+  mashOverlay.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("dialog-open");
+  mashReturnFocus?.focus();
+  mashReturnFocus = null;
 }
 
 function renderMashSummaryTable(results) {
@@ -936,7 +1200,8 @@ function openMashSetup() {
   showMashScreen("setup");
 }
 
-document.getElementById("openMashTestBtn").addEventListener("click", () => {
+openMashTestBtn.addEventListener("click", () => {
+  mashReturnFocus = document.activeElement;
   if (lastMashResults) {
     renderMashSummaryTable(lastMashResults);
     showMashScreen("summary");
@@ -944,6 +1209,29 @@ document.getElementById("openMashTestBtn").addEventListener("click", () => {
     openMashSetup();
   }
   mashOverlay.classList.add("visible");
+  mashOverlay.setAttribute("aria-hidden", "false");
+  document.body.classList.add("dialog-open");
+  requestAnimationFrame(() => mashPanelEl.focus());
+});
+
+mashOverlay.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeMashOverlay();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = [...mashOverlay.querySelectorAll("button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])")];
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 });
 
 document.getElementById("mashCancelSetupBtn").addEventListener("click", closeMashOverlay);
@@ -957,8 +1245,7 @@ mashStartBtnEl.addEventListener("click", () => {
   const pad = getSelectedGamepad();
   if (!pad) return;
   const durationMs = Number(mashDurationSelect.value);
-  const buttonCount = Math.min(currentLabels.length, pad.buttons.length);
-  const queue = Array.from({ length: buttonCount }, (_, i) => ({ index: i, label: currentLabels[i] || `Bouton ${i}` }));
+  const queue = buildMashQueue(currentLabels, pad.buttons.length);
   mashTest = new MashSequenceTest(queue, durationMs);
   showMashScreen("running");
 });
@@ -971,20 +1258,16 @@ document.getElementById("mashAbortBtn").addEventListener("click", () => {
 document.getElementById("mashCloseBtn").addEventListener("click", closeMashOverlay);
 
 const pressLog = document.getElementById("pressLog");
-const avgLatencyEl = document.getElementById("avgLatency");
 const PRESS_LOG_LIMIT = 10;
-const latencySamples = [];
-let currentAvgLatencyMs = null;
 let lastLoggedPressAt = null;
 
-function logPress(label, latencyMs, { value, eventTime, chatterDelayMs = null }) {
+function logPress(label, { value, eventTime, chatterDelayMs = null }) {
   const entry = document.createElement("div");
   const time = new Date().toLocaleTimeString("fr-FR", { hour12: false });
   const timeEl = document.createElement("time");
   const labelEl = document.createElement("span");
   const valueEl = document.createElement("span");
   const intervalEl = document.createElement("span");
-  const latencyEl = document.createElement("span");
   const statusEl = document.createElement("span");
   const intervalMs = lastLoggedPressAt == null ? null : eventTime - lastLoggedPressAt;
   lastLoggedPressAt = eventTime;
@@ -999,247 +1282,16 @@ function logPress(label, latencyMs, { value, eventTime, chatterDelayMs = null })
   valueEl.textContent = `${Math.round(value * 100)} %`;
   intervalEl.className = "press-log-interval";
   intervalEl.textContent = intervalMs == null ? "—" : intervalMs < 1000 ? `+${intervalMs.toFixed(0)} ms` : `+${(intervalMs / 1000).toFixed(1)} s`;
-  latencyEl.className = "press-log-latency";
-  latencyEl.textContent = chatterDelayMs != null ? "—" : latencyMs != null ? `~${latencyMs.toFixed(1)} ms` : "n/d";
   statusEl.className = "press-log-status";
   statusEl.textContent = chatterDelayMs != null ? "Chatter" : "Normal";
   if (chatterDelayMs != null) {
     entry.classList.add("is-chatter");
     statusEl.title = `Ré-appui ${chatterDelayMs.toFixed(1)} ms après relâche`;
   }
-  entry.append(timeEl, labelEl, valueEl, intervalEl, latencyEl, statusEl);
+  entry.append(timeEl, labelEl, valueEl, intervalEl, statusEl);
   pressLog.prepend(entry);
   while (pressLog.children.length > PRESS_LOG_LIMIT) pressLog.removeChild(pressLog.lastChild);
-
-  if (compareCapture && compareCapture.endAt == null) beginCompareCountdown();
-
-  if (latencyMs != null && latencyMs >= 0 && latencyMs < 500) {
-    latencySamples.push(latencyMs);
-    if (latencySamples.length > 30) latencySamples.shift();
-    currentAvgLatencyMs = latencySamples.reduce((a, b) => a + b, 0) / latencySamples.length;
-    avgLatencyEl.textContent = `${currentAvgLatencyMs.toFixed(1)} ms`;
-
-    if (compareCapture && latencyMs >= 0 && latencyMs < 500) {
-      compareCapture.samples.push(latencyMs);
-    }
-  }
 }
-
-const COMPARE_CAPTURE_DURATION_MS = 5000;
-const COMPARE_MIN_SAMPLES = 8;
-
-const compareSnapshots = { wired: null, wireless: null };
-const compareElByMode = {
-  wired: document.getElementById("wiredSnapshot"),
-  wireless: document.getElementById("wirelessSnapshot"),
-};
-const compareCardByMode = {
-  wired: document.getElementById("wiredCard"),
-  wireless: document.getElementById("wirelessCard"),
-};
-const compareProgressByMode = {
-  wired: document.getElementById("wiredProgress"),
-  wireless: document.getElementById("wirelessProgress"),
-};
-const comparePulsesByMode = {
-  wired: [...document.querySelectorAll("#wiredPulses i")],
-  wireless: [...document.querySelectorAll("#wirelessPulses i")],
-};
-const compareButtonByMode = {
-  wired: document.getElementById("captureWired"),
-  wireless: document.getElementById("captureWireless"),
-};
-const compareDeltaEl = document.getElementById("compareDelta");
-let compareCapture = null; // { mode, padId, samples: [], endAt, lastSeconds, lastCount }
-
-function getCompareActionLabel(mode, repeat = false) {
-  const label = mode === "wired" ? "filaire" : "sans-fil";
-  return `${repeat ? "Refaire" : "Démarrer"} le test ${label}`;
-}
-
-function setComparePulseCount(mode, count, animateLast = false) {
-  comparePulsesByMode[mode].forEach((pulse, index) => {
-    pulse.classList.toggle("detected", index < Math.min(count, COMPARE_MIN_SAMPLES));
-    pulse.classList.toggle("just-detected", animateLast && index === Math.min(count, COMPARE_MIN_SAMPLES) - 1);
-  });
-}
-
-function renderCompareSnapshot(mode) {
-  const snap = compareSnapshots[mode];
-  const el = compareElByMode[mode];
-  const card = compareCardByMode[mode];
-  el.replaceChildren();
-  if (!snap) {
-    card.dataset.state = "idle";
-    const title = document.createElement("strong");
-    title.className = "compare-readout-title";
-    title.textContent = "Prêt à mesurer";
-    const detail = document.createElement("span");
-    detail.className = "compare-readout-detail";
-    detail.textContent = mode === "wired" ? "Branchez la manette avec son câble." : "Connectez la manette sans câble.";
-    el.append(title, detail);
-    compareProgressByMode[mode].textContent = "Objectif : 8 appuis minimum";
-    compareButtonByMode[mode].textContent = getCompareActionLabel(mode);
-    setComparePulseCount(mode, 0);
-    return;
-  }
-  card.dataset.state = "complete";
-  const measure = document.createElement("div");
-  measure.className = "compare-measure";
-  const value = document.createElement("strong");
-  value.textContent = `${snap.avgLatencyMs.toFixed(1)} ms`;
-  const label = document.createElement("span");
-  label.textContent = "Latence moyenne";
-  measure.append(value, label);
-  const detail = document.createElement("span");
-  detail.className = "compare-readout-detail";
-  detail.textContent = `${snap.sampleCount} appuis · Mesuré à ${snap.capturedAt}`;
-  detail.title = snap.padId;
-  el.append(measure, detail);
-  compareProgressByMode[mode].textContent = "Mesure terminée";
-  compareButtonByMode[mode].textContent = getCompareActionLabel(mode, true);
-  setComparePulseCount(mode, COMPARE_MIN_SAMPLES);
-}
-
-function renderCompareDelta() {
-  const { wired, wireless } = compareSnapshots;
-  if (!wired || !wireless) {
-    compareDeltaEl.replaceChildren();
-    compareDeltaEl.classList.remove("visible");
-    return;
-  }
-  const delta = wireless.avgLatencyMs - wired.avgLatencyMs;
-  const heading = document.createElement("span");
-  heading.className = "compare-summary-label";
-  heading.textContent = "Comparaison disponible";
-  const value = document.createElement("strong");
-  value.textContent = `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} ms`;
-  const detail = document.createElement("span");
-  detail.textContent = delta > 0 ? "Le sans-fil répond plus lentement que le filaire." : delta < 0 ? "Le sans-fil paraît plus rapide ; refaites les mesures pour confirmer." : "Aucun écart mesurable entre les deux connexions.";
-  compareDeltaEl.replaceChildren(heading, value, detail);
-  compareDeltaEl.classList.add("visible");
-}
-
-function setCompareButtonsDisabled(disabled) {
-  compareButtonByMode.wired.disabled = disabled;
-  compareButtonByMode.wireless.disabled = disabled;
-}
-
-function beginCompareCountdown() {
-  if (!compareCapture || compareCapture.endAt != null) return;
-  const { mode } = compareCapture;
-  compareCapture.endAt = performance.now() + COMPARE_CAPTURE_DURATION_MS;
-  compareCardByMode[mode].dataset.state = "capturing";
-  setCompareButtonsDisabled(true);
-  compareButtonByMode[mode].textContent = "Test en cours…";
-  tickCompareCapture();
-}
-
-function tickCompareCapture() {
-  if (!compareCapture || compareCapture.endAt == null) return;
-  const remainingMs = compareCapture.endAt - performance.now();
-  if (remainingMs <= 0) {
-    finishCompareCapture();
-    return;
-  }
-  const { mode } = compareCapture;
-  const el = compareElByMode[mode];
-  const seconds = Math.ceil(remainingMs / 1000);
-  const count = compareCapture.samples.length;
-  if (seconds !== compareCapture.lastSeconds || count !== compareCapture.lastCount) {
-    el.replaceChildren();
-    const title = document.createElement("strong");
-    title.className = "compare-capture-title";
-    title.textContent = "Appuyez maintenant";
-    const timer = document.createElement("strong");
-    timer.className = "compare-timer mono";
-    timer.textContent = `${seconds} s`;
-    el.append(title, timer);
-    compareProgressByMode[mode].textContent = `${count}/${COMPARE_MIN_SAMPLES} appuis détectés`;
-    setComparePulseCount(mode, count, count !== compareCapture.lastCount);
-    compareCapture.lastSeconds = seconds;
-    compareCapture.lastCount = count;
-  }
-  requestAnimationFrame(tickCompareCapture);
-}
-
-function finishCompareCapture() {
-  const { mode, padId, samples } = compareCapture;
-  compareCapture = null;
-  setCompareButtonsDisabled(false);
-
-  if (samples.length < COMPARE_MIN_SAMPLES) {
-    const el = compareElByMode[mode];
-    compareCardByMode[mode].dataset.state = "error";
-    el.replaceChildren();
-    const title = document.createElement("strong");
-    title.className = "compare-readout-title";
-    title.textContent = "Mesure incomplète";
-    const detail = document.createElement("span");
-    detail.className = "compare-readout-detail";
-    detail.textContent = `${samples.length}/${COMPARE_MIN_SAMPLES} appuis détectés. Recommencez en appuyant plus souvent.`;
-    el.append(title, detail);
-    compareProgressByMode[mode].textContent = "Objectif non atteint";
-    compareButtonByMode[mode].textContent = getCompareActionLabel(mode, true);
-    return;
-  }
-  compareSnapshots[mode] = {
-    padId,
-    avgLatencyMs: samples.reduce((a, b) => a + b, 0) / samples.length,
-    sampleCount: samples.length,
-    capturedAt: new Date().toLocaleTimeString(),
-  };
-  renderCompareSnapshot(mode);
-  renderCompareDelta();
-}
-
-function captureCompareSnapshot(mode) {
-  if (compareCapture) {
-    if (compareCapture.mode === mode && compareCapture.endAt == null) {
-      compareCapture = null;
-      setCompareButtonsDisabled(false);
-      renderCompareSnapshot(mode);
-    }
-    return;
-  }
-  const pad = getSelectedGamepad();
-  if (!pad) {
-    const el = compareElByMode[mode];
-    compareCardByMode[mode].dataset.state = "error";
-    el.replaceChildren();
-    const title = document.createElement("strong");
-    title.className = "compare-readout-title";
-    title.textContent = "Aucune manette détectée";
-    const detail = document.createElement("span");
-    detail.className = "compare-readout-detail";
-    detail.textContent = "Connectez une manette avant de démarrer le test.";
-    el.append(title, detail);
-    return;
-  }
-  compareSnapshots[mode] = null;
-  renderCompareDelta();
-  compareCapture = { mode, padId: pad.id, samples: [], endAt: null, lastSeconds: null, lastCount: null };
-  compareCardByMode[mode].dataset.state = "waiting";
-  setComparePulseCount(mode, 0);
-  setCompareButtonsDisabled(true);
-  compareButtonByMode[mode].disabled = false;
-  compareButtonByMode[mode].textContent = "Annuler";
-  const el = compareElByMode[mode];
-  el.replaceChildren();
-  const title = document.createElement("strong");
-  title.className = "compare-capture-title";
-  title.textContent = "Test prêt";
-  const detail = document.createElement("span");
-  detail.className = "compare-readout-detail";
-  detail.textContent = "Appuyez sur un bouton pour lancer le chrono.";
-  el.append(title, detail);
-  compareProgressByMode[mode].textContent = "En attente du premier appui";
-}
-
-document.getElementById("captureWired").addEventListener("click", () => captureCompareSnapshot("wired"));
-document.getElementById("captureWireless").addEventListener("click", () => captureCompareSnapshot("wireless"));
-renderCompareSnapshot("wired");
-renderCompareSnapshot("wireless");
 
 let prevButtonStates = [];
 let lastReleaseTimes = [];
@@ -1256,7 +1308,14 @@ function buildDiagnosticReport() {
   return {
     generatedAt: new Date().toISOString(),
     gamepad: pad
-      ? { id: pad.id, index: pad.index, mappingType: detectControllerType(pad.id), buttonCount: pad.buttons.length, axisCount: pad.axes.length }
+      ? {
+          id: pad.id,
+          index: pad.index,
+          controllerType: detectControllerType(pad.id),
+          mapping: pad.mapping || "non standard",
+          buttonCount: pad.buttons.length,
+          axisCount: pad.axes.length,
+        }
       : null,
     deadzones: {
       left: { inner: Number(sliders.left.inner.value), outer: Number(sliders.left.outer.value) },
@@ -1274,16 +1333,11 @@ function buildDiagnosticReport() {
       lt: triggerStability.lt.getResult(),
       rt: triggerStability.rt.getResult(),
     },
-    latency: {
-      averageMs: currentAvgLatencyMs != null ? Number(currentAvgLatencyMs.toFixed(1)) : null,
-      sampleCount: latencySamples.length,
-    },
     chatterEventsTotal: chatterTotal,
     totalPressCount: [...pressCountByButton.values()].reduce((sum, n) => sum + n, 0),
     chatterByButton: [...chatterByButton.entries()]
       .map(([label, count]) => ({ label, count, pressCount: pressCountByButton.get(label) || count }))
       .sort((a, b) => b.count - a.count),
-    wiredVsWirelessComparison: compareSnapshots,
     mashTest: lastMashResults
       ? lastMashResults.map((r) => ({
           label: r.label,
@@ -1319,7 +1373,7 @@ function computeDiagnosticVerdict(report) {
   const leftPercent = asymmetryPercent(report.calibration.left);
   const rightPercent = asymmetryPercent(report.calibration.right);
   if (!report.calibration.left && !report.calibration.right) {
-    items.push({ status: "neutral", title: "Sticks", text: "Aucune calibration de range effectuée, usure/drift localisé non vérifié." });
+    items.push({ status: "neutral", title: "Sticks", text: "Aucun test d'amplitude effectué. La couverture et l'asymétrie des sticks ne sont pas encore vérifiées." });
   } else if (leftPercent != null || rightPercent != null) {
     const sides = [leftPercent != null ? "gauche" : null, rightPercent != null ? "droit" : null].filter(Boolean).join(" et ");
     const worstPercent = Math.max(leftPercent ?? 0, rightPercent ?? 0);
@@ -1328,10 +1382,10 @@ function computeDiagnosticVerdict(report) {
     items.push({
       status,
       title: "Sticks",
-      text: `Asymétrie ${severity} détectée sur le stick ${sides} (${worstPercent}%), ${status === "bad" ? "ce niveau pointe vers une vraie usure ou un stick drift localisé plutôt qu'un simple guide carré accentué" : "possible usure ou drift localisé"}, voir détail ci-dessous.`,
+      text: `Asymétrie ${severity} observée sur le stick ${sides} (${worstPercent} %). Recommencez le test pour vérifier que le résultat est reproductible.`,
     });
   } else {
-    items.push({ status: "ok", title: "Sticks", text: "Aucune asymétrie détectée sur les sticks calibrés." });
+    items.push({ status: "ok", title: "Sticks", text: "Aucune asymétrie notable observée pendant les tests d'amplitude réalisés." });
   }
 
   const { left: leftNeutral, right: rightNeutral } = report.neutralDrift;
@@ -1356,8 +1410,8 @@ function computeDiagnosticVerdict(report) {
         title: "Point neutre des sticks",
         text:
           status === "bad"
-            ? `Décalage net du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), au-delà de la dead zone habituelle: signe probable d'un stick drift actif plutôt que d'un simple début de dérive.`
-            : `Décalage du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), signe possible d'un drift naissant même si la calibration de range ne montre pas encore d'asymétrie.`,
+            ? `Décalage net du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), au-delà de la zone morte habituelle : signe probable d'un drift actif.`
+            : `Décalage du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), à confirmer avec une seconde mesure même si le test d'amplitude ne montre pas d'asymétrie.`,
       });
     }
   }
@@ -1373,7 +1427,7 @@ function computeDiagnosticVerdict(report) {
       rtGrade.key !== "na" && rtGrade.key !== "excellent" ? "RT" : null,
     ].filter(Boolean);
     if (unstableSides.length === 0) {
-      items.push({ status: "ok", title: "Gâchettes", text: "Signal lisse sur les gâchettes tenues à un palier fixe, aucun signe d'usure du capteur." });
+      items.push({ status: "ok", title: "Gâchettes", text: "Signal régulier pendant le maintien manuel des gâchettes. La mesure reste dépendante de la stabilité du geste." });
     } else {
       const worstGrade = [ltGrade, rtGrade].some((g) => g.key === "poor") ? "poor" : "fair";
       const anyIsolated = (ltGrade.isolated || rtGrade.isolated) && worstGrade !== "poor";
@@ -1388,7 +1442,7 @@ function computeDiagnosticVerdict(report) {
         title: "Gâchettes",
         text:
           worstGrade === "poor"
-            ? `Signal instable détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, sauts répétés): ce niveau dépasse largement un simple tremblement de doigt, signe probable d'un capteur/potentiomètre qui décroche.`
+            ? `Signal instable détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, sauts répétés). Recommencez le test avant de suspecter un défaut du capteur.`
             : anyIsolated
               ? `Écart isolé détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, saut unique): probablement un accident de mesure ponctuel plutôt qu'un vrai défaut, retestez pour confirmer.`
               : `Léger bruit détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu), à surveiller mais pas encore franchement anormal.`,
@@ -1396,18 +1450,10 @@ function computeDiagnosticVerdict(report) {
     }
   }
 
-  if (report.latency.sampleCount < 5) {
-    items.push({ status: "neutral", title: "Latence", text: "Pas assez d'échantillons, appuyez sur quelques boutons pour mesurer." });
-  } else if (report.latency.averageMs <= 20) {
-    items.push({ status: "ok", title: "Latence", text: `${report.latency.averageMs} ms en moyenne, excellente réactivité.` });
-  } else if (report.latency.averageMs <= 40) {
-    items.push({ status: "warn", title: "Latence", text: `${report.latency.averageMs} ms en moyenne, correcte, peut indiquer du Bluetooth ou un polling réduit.` });
-  } else {
-    items.push({ status: "bad", title: "Latence", text: `${report.latency.averageMs} ms en moyenne, élevée, vérifiez la connexion (sans-fil, dongle, câble).` });
-  }
-
-  if (report.chatterEventsTotal === 0) {
-    items.push({ status: "ok", title: "Chatter", text: "Aucun événement de chatter détecté." });
+  if (report.totalPressCount < 20) {
+    items.push({ status: "neutral", title: "Doubles déclenchements", text: "Pas assez d'appuis observés pour conclure. Lancez le diagnostic des boutons." });
+  } else if (report.chatterEventsTotal === 0) {
+    items.push({ status: "ok", title: "Observation libre des boutons", text: "Aucun double déclenchement involontaire observé pendant les appuis libres." });
   } else {
     // Comme pour le mashing: un chatter isolé sur des centaines d'appuis en usage normal
     // n'a rien à voir avec un chatter récurrent. On juge sur le taux global plutôt que sur
@@ -1423,14 +1469,14 @@ function computeDiagnosticVerdict(report) {
     } else {
       text = `${report.chatterEventsTotal} événement(s) détecté(s) sur ${report.totalPressCount} appuis (${globalRate}%), fiabilité ${grade.label.toLowerCase()}.${detail}`;
     }
-    items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Chatter", text });
+    items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Observation libre des boutons", text });
   }
 
   if (!report.mashTest) {
     items.push({
       status: "neutral",
       title: "Diagnostic des boutons",
-      text: "Aucun test de mashing effectué, chatter et boutons lents non vérifiés bouton par bouton. Lancez le diagnostic des boutons depuis l'application pour fiabiliser ce point.",
+      text: "Aucun test guidé effectué. Lancez le diagnostic des boutons pour vérifier les doubles déclenchements bouton par bouton.",
     });
   } else {
     const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
@@ -1441,10 +1487,10 @@ function computeDiagnosticVerdict(report) {
     if (grade.key === "na") {
       text = "Pas assez d'appuis enregistrés pendant le diagnostic pour conclure sur la fiabilité des boutons.";
     } else if (totalChatter === 0) {
-      text = `Test effectué sur ${report.mashTest.length} bouton(s), aucun chatter détecté pendant le mashing, fiabilité ${grade.label.toLowerCase()}.`;
+      text = `Test effectué sur ${report.mashTest.length} bouton(s), aucun double déclenchement observé, fiabilité ${grade.label.toLowerCase()}.`;
     } else {
       const worst = [...report.mashTest].sort((a, b) => b.chatterCount - a.chatterCount)[0];
-      text = `Fiabilité ${grade.label.toLowerCase()} (${totalChatter} chatter sur ${totalPressCount} appuis pendant le mashing). Bouton le plus touché: ${worst.label} (${worst.chatterCount} fois).`;
+      text = `Fiabilité ${grade.label.toLowerCase()} (${totalChatter} double(s) déclenchement(s) sur ${totalPressCount} appuis). Bouton le plus touché : ${worst.label} (${worst.chatterCount} fois).`;
     }
     items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Diagnostic des boutons", text });
   }
@@ -1605,15 +1651,8 @@ function buildDiagnosticPdf(report) {
 
   const verdictItems = computeDiagnosticVerdict(report);
 
-  let latencyValue = "N/A";
-  let latencyStatus = "neutral";
-  if (report.latency.averageMs != null && report.latency.sampleCount >= 5) {
-    latencyValue = `${report.latency.averageMs} ms`;
-    latencyStatus = report.latency.averageMs <= 20 ? "ok" : report.latency.averageMs <= 40 ? "warn" : "bad";
-  }
-
   const chatterValue = String(report.chatterEventsTotal);
-  const chatterStatus = verdictItems.find((i) => i.title === "Chatter")?.status ?? "neutral";
+  const chatterStatus = verdictItems.find((i) => i.title === "Observation libre des boutons" || i.title === "Doubles déclenchements")?.status ?? "neutral";
 
   let mashValue = "N/A";
   let mashStatus = "neutral";
@@ -1627,15 +1666,17 @@ function buildDiagnosticPdf(report) {
 
   const hasBadVerdict = verdictItems.some((i) => i.status === "bad");
   const hasWarnVerdict = verdictItems.some((i) => i.status === "warn");
-  const globalStatus = hasBadVerdict ? "bad" : hasWarnVerdict ? "warn" : "ok";
-  const globalValue = hasBadVerdict ? "Problème" : hasWarnVerdict ? "Attention" : "Bon état";
+  const hasNeutralVerdict = verdictItems.some((i) => i.status === "neutral");
+  const globalStatus = hasBadVerdict ? "bad" : hasWarnVerdict ? "warn" : hasNeutralVerdict ? "neutral" : "ok";
+  const globalValue = hasBadVerdict ? "Problème" : hasWarnVerdict ? "Attention" : hasNeutralVerdict ? "Incomplet" : "Cohérent";
+  const measuredItems = verdictItems.filter((item) => item.status !== "neutral").length;
 
   y = pdfEnsureSpace(doc, y, 26);
   const kpis = [
-    { label: "Latence moyenne", value: latencyValue, status: latencyStatus },
-    { label: "Chatter détecté", value: chatterValue, status: chatterStatus },
+    { label: "Mesures disponibles", value: `${measuredItems}/${verdictItems.length}`, status: hasNeutralVerdict ? "neutral" : "ok" },
+    { label: "Doubles déclenchements", value: chatterValue, status: chatterStatus },
     { label: "Fiabilité boutons", value: mashValue, status: mashStatus },
-    { label: "Verdict global", value: globalValue, status: globalStatus },
+    { label: "Synthèse", value: globalValue, status: globalStatus },
   ];
   const kpiGap = 4;
   const kpiWidth = (PDF_CONTENT_WIDTH - kpiGap * (kpis.length - 1)) / kpis.length;
@@ -1664,7 +1705,7 @@ function buildDiagnosticPdf(report) {
     doc.text("Mapping", PDF_MARGIN + 2, y);
     doc.setFont(undefined, "normal");
     doc.text(
-      `${report.gamepad.mappingType} · ${report.gamepad.buttonCount} boutons · ${report.gamepad.axisCount} axes`,
+      `${report.gamepad.mapping} · ${report.gamepad.buttonCount} boutons · ${report.gamepad.axisCount} axes`,
       PDF_MARGIN + 18,
       y
     );
@@ -1676,7 +1717,7 @@ function buildDiagnosticPdf(report) {
   autoTable(doc, {
     startY: y,
     margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-    head: [["Stick", "Dead zone intérieure", "Dead zone extérieure"]],
+    head: [["Stick", "Zone morte intérieure", "Zone morte extérieure"]],
     body: [
       ["Gauche", report.deadzones.left.inner.toFixed(2), report.deadzones.left.outer.toFixed(2)],
       ["Droit", report.deadzones.right.inner.toFixed(2), report.deadzones.right.outer.toFixed(2)],
@@ -1770,18 +1811,11 @@ function buildDiagnosticPdf(report) {
   y = pdfDivider(doc, triggersEndY + 3);
 
   y = pdfEnsureSpace(doc, y, 32);
-  y = pdfPanelHeader(doc, "Latence & chatter", y, PDF_ACCENT);
+  y = pdfPanelHeader(doc, "Doubles déclenchements observés", y, PDF_ACCENT);
   doc.setFontSize(9.5);
   doc.setTextColor(...PDF_DARK);
   doc.setFont(undefined, "bold");
-  doc.text("Latence moyenne", PDF_MARGIN + 2, y);
-  doc.setFont("courier", "normal");
-  const avgText =
-    report.latency.averageMs != null ? `${report.latency.averageMs} ms (${report.latency.sampleCount} éch.)` : "n/a";
-  doc.text(avgText, PDF_MARGIN + 40, y);
-  y += 5.5;
-  doc.setFont(undefined, "bold");
-  doc.text("Chatter détecté", PDF_MARGIN + 2, y);
+  doc.text("Événements détectés", PDF_MARGIN + 2, y);
   doc.setFont("courier", "normal");
   doc.text(`${report.chatterEventsTotal} événement(s)`, PDF_MARGIN + 40, y);
   doc.setFont(undefined, "normal");
@@ -1815,7 +1849,7 @@ function buildDiagnosticPdf(report) {
   y = pdfDivider(doc, y);
 
   y = pdfEnsureSpace(doc, y, 30);
-  y = pdfPanelHeader(doc, "Diagnostic des boutons (mashing)", y, PDF_ACCENT);
+  y = pdfPanelHeader(doc, "Diagnostic guidé des boutons", y, PDF_ACCENT);
   if (report.mashTest && report.mashTest.length) {
     const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
     const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
@@ -1831,7 +1865,7 @@ function buildDiagnosticPdf(report) {
     autoTable(doc, {
       startY: y,
       margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-      head: [["Bouton", "Appuis", "Appuis/s", "Chatter", "Fiabilité"]],
+      head: [["Bouton", "Appuis", "Appuis/s", "Doubles", "Fiabilité"]],
       body: report.mashTest.map((r, i) => [
         r.label,
         String(r.pressCount),
@@ -1879,64 +1913,13 @@ function buildDiagnosticPdf(report) {
     doc.setFontSize(9.5);
     doc.setTextColor(...PDF_DARK);
     const lines = doc.splitTextToSize(
-      "Aucun test de réactivité (mashing) effectué avant l'export. Lancez le diagnostic des boutons depuis l'application pour fiabiliser ce point du rapport.",
+      "Aucun diagnostic guidé des boutons effectué avant l'export. Lancez ce test depuis l'application pour fiabiliser cette partie du rapport.",
       PDF_CONTENT_WIDTH - 4,
     );
     doc.text(lines, PDF_MARGIN + 2, y);
     y += lines.length * 5 + 6;
   }
   y = pdfDivider(doc, y);
-
-  y = pdfEnsureSpace(doc, y, 28);
-  y = pdfPanelHeader(doc, "Comparaison filaire / sans-fil", y, PDF_ACCENT);
-  const { wired, wireless } = report.wiredVsWirelessComparison;
-  if (wired || wireless) {
-    autoTable(doc, {
-      startY: y,
-      margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-      head: [["Mode", "Manette", "Latence moy.", "Échantillons", "Capturé à"]],
-      body: [
-        wired
-          ? ["Filaire", wired.padId, `${wired.avgLatencyMs.toFixed(1)} ms`, String(wired.sampleCount), wired.capturedAt]
-          : ["Filaire", "n/a", "n/a", "n/a", "n/a"],
-        wireless
-          ? [
-              "Sans-fil",
-              wireless.padId,
-              `${wireless.avgLatencyMs.toFixed(1)} ms`,
-              String(wireless.sampleCount),
-              wireless.capturedAt,
-            ]
-          : ["Sans-fil", "n/a", "n/a", "n/a", "n/a"],
-      ],
-      theme: "grid",
-      headStyles: { fillColor: PDF_ACCENT, textColor: PDF_ACCENT_TEXT, fontSize: 9 },
-      styles: { fontSize: 9, textColor: PDF_DARK },
-      columnStyles: {
-        2: { font: "courier", halign: "right" },
-        3: { font: "courier", halign: "right" },
-      },
-    });
-    y = doc.lastAutoTable.finalY + 6;
-    if (wired && wireless) {
-      const delta = wireless.avgLatencyMs - wired.avgLatencyMs;
-      const sign = delta >= 0 ? "+" : "";
-      doc.setFontSize(9.5);
-      doc.setFont(undefined, "bold");
-      doc.setTextColor(...PDF_DARK);
-      doc.text("Écart sans-fil vs filaire", PDF_MARGIN + 2, y);
-      doc.setFont("courier", "normal");
-      doc.text(`${sign}${delta.toFixed(1)} ms`, PDF_MARGIN + 50, y);
-      doc.setFont(undefined, "normal");
-      y += 4;
-    }
-  } else {
-    doc.setFontSize(9.5);
-    doc.setTextColor(...PDF_DARK);
-    doc.text("Aucune capture effectuée.", PDF_MARGIN + 2, y);
-    y += 6;
-  }
-  y = pdfDivider(doc, y + 4);
 
   y = pdfEnsureSpace(doc, y, 28);
   y = pdfPanelHeader(doc, "Limites de ce diagnostic", y, PDF_MUTED);
@@ -1971,13 +1954,9 @@ document.getElementById("exportReportBtn").addEventListener("click", () => {
 });
 
 document.getElementById("resetDataBtn").addEventListener("click", () => {
-  if (!window.confirm("Réinitialiser toutes les données collectées (latence, chatter, calibration, drift, comparaison) ? Cette action est irréversible.")) {
+  if (!window.confirm("Réinitialiser toutes les mesures collectées (sticks, gâchettes, boutons et historique) ? Cette action est irréversible.")) {
     return;
   }
-
-  latencySamples.length = 0;
-  currentAvgLatencyMs = null;
-  avgLatencyEl.textContent = "n/a";
 
   chatterTotal = 0;
   chatterByButton.clear();
@@ -1992,14 +1971,6 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
   pressLog.innerHTML = "";
   lastLoggedPressAt = null;
 
-  compareCapture = null;
-  setCompareButtonsDisabled(false);
-  compareSnapshots.wired = null;
-  compareSnapshots.wireless = null;
-  renderCompareSnapshot("wired");
-  renderCompareSnapshot("wireless");
-  renderCompareDelta();
-
   mashTest = null;
   lastMashResults = null;
 
@@ -2008,6 +1979,12 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
 
   neutralDrift.left.reset();
   neutralDrift.right.reset();
+  neutralCapture = null;
+  measureNeutralBtn.disabled = false;
+  measureNeutralBtn.textContent = "Mesurer le point neutre";
+  guideContextAction.disabled = false;
+  neutralCaptureStatus.textContent = "Posez la manette à plat, relâchez les sticks, puis lancez une mesure de trois secondes.";
+  delete neutralCaptureStatus.dataset.status;
   renderNeutralDrift("left");
   renderNeutralDrift("right");
 
@@ -2015,6 +1992,7 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
   triggerStability.rt.reset();
   renderTriggerStability("lt", performance.now());
   renderTriggerStability("rt", performance.now());
+  if (GUIDE_STEPS[guideStepIndex].id === "summary") renderGuidedSummary();
 });
 
 let lastFrameTime = performance.now();
@@ -2039,6 +2017,15 @@ function loop() {
     if (pad.id !== lastPadId) {
       lastPadId = pad.id;
       rebuildButtonGrid(getLabelsFor(pad.id));
+      document.getElementById("deviceName").textContent = pad.id;
+      document.getElementById("deviceButtons").textContent = `${pad.buttons.length} boutons`;
+      document.getElementById("deviceAxes").textContent = `${pad.axes.length} axes`;
+      const hasStandardMapping = pad.mapping === "standard";
+      document.getElementById("deviceMapping").textContent = hasStandardMapping
+        ? "Mapping standard reconnu : les libellés et positions peuvent être interprétés avec confiance."
+        : "Mapping non standard : vérifiez visuellement chaque bouton, certains libellés peuvent différer.";
+      document.getElementById("deviceSupport").textContent = hasStandardMapping ? "Mapping standard" : "À vérifier";
+      document.getElementById("deviceSupport").dataset.status = hasStandardMapping ? "ok" : "warn";
       prevButtonStates = [];
       lastReleaseTimes = [];
       neutralDrift.left.reset();
@@ -2054,9 +2041,8 @@ function loop() {
     }
 
     const now = frameNow;
-    // pad.timestamp est l'horodatage natif du driver pour le dernier état lu, plus précis
-    // que le temps de la frame rAF pour dater les transitions presse/relâche, car il ne
-    // dépend pas du moment où le navigateur a exécuté la frame.
+    // Le timestamp date la dernière mise à jour exposée par le navigateur. Il peut ordonner
+    // les transitions observées, mais ne mesure pas la latence physique de la manette.
     const gamepadTimestamp = Number.isFinite(pad.timestamp) && pad.timestamp > 0 ? pad.timestamp : null;
     const eventTime = gamepadTimestamp ?? now;
 
@@ -2087,10 +2073,7 @@ function loop() {
     if (calibration.left.active) calibration.left.points.push({ x: lx, y: ly });
     if (calibration.right.active) calibration.right.points.push({ x: rx, y: ry });
 
-    neutralDrift.left.update(lx, ly, now);
-    neutralDrift.right.update(rx, ry, now);
-    renderNeutralDrift("left");
-    renderNeutralDrift("right");
+    updateNeutralCapture(lx, ly, rx, ry, now, frameGapMs);
 
     drawStick(leftCtx, leftCanvas, lx, ly, leftAdj.x, leftAdj.y, leftInner, leftOuter, calibration.left.points);
     drawStick(rightCtx, rightCanvas, rx, ry, rightAdj.x, rightAdj.y, rightInner, rightOuter, calibration.right.points);
@@ -2136,7 +2119,6 @@ function loop() {
         else cell.classList.remove("active");
       }
       if (pressed && !wasPressed) {
-        const latency = Number.isFinite(pad.timestamp) && pad.timestamp > 0 ? now - pad.timestamp : null;
         const label = currentLabels[i] || `Bouton ${i}`;
         pressCountByButton.set(label, (pressCountByButton.get(label) || 0) + 1);
         const sinceRelease = lastReleaseTimes[i];
@@ -2144,13 +2126,13 @@ function loop() {
           chatterTotal++;
           chatterByButton.set(label, (chatterByButton.get(label) || 0) + 1);
           chatterCountEl.textContent = chatterTotal;
-          logPress(label, null, { value: btn.value, eventTime, chatterDelayMs: eventTime - sinceRelease });
+          logPress(label, { value: btn.value, eventTime, chatterDelayMs: eventTime - sinceRelease });
           if (cell) {
             cell.classList.add("chatter");
             setTimeout(() => cell.classList.remove("chatter"), 400);
           }
         } else {
-          logPress(label, latency, { value: btn.value, eventTime });
+          logPress(label, { value: btn.value, eventTime });
         }
       }
       if (!pressed && wasPressed) {
