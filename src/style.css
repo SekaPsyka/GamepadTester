@@ -102,6 +102,34 @@ header {
   margin-left: auto;
 }
 
+.export-status {
+  align-self: flex-end;
+  margin: -4px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.export-status:empty {
+  display: none;
+}
+
+.export-status[data-status="active"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+
+.export-status[data-status="ok"] {
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 7%, var(--panel));
+}
+
+.export-status[data-status="error"] {
+  color: var(--status-bad);
+  background: color-mix(in srgb, var(--status-bad) 7%, var(--panel));
+}
+
 h1 {
   font-family: "Bahnschrift Condensed", "Arial Narrow", "Segoe UI", sans-serif;
   font-size: 24px;
@@ -251,17 +279,17 @@ h1 {
   display: block;
   margin-bottom: 7px;
   color: var(--accent);
-  font: 600 10px "Consolas", "SFMono-Regular", monospace;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+  font: 600 11px "Consolas", "SFMono-Regular", monospace;
+  letter-spacing: 0.04em;
 }
 
 .guide-copy h2 {
   margin: 0;
   max-width: 720px;
   color: var(--text);
-  font: 600 clamp(24px, 3vw, 36px) "Bahnschrift Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  font: 600 32px "Bahnschrift Condensed", "Arial Narrow", "Segoe UI", sans-serif;
   letter-spacing: 0.015em;
+  text-wrap: balance;
 }
 
 .guide-copy p {
@@ -349,21 +377,17 @@ h1 {
   margin-top: 14px;
   padding: 18px;
   border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--panel-border));
-  border-left-width: 4px;
   border-radius: 10px;
-  background:
-    linear-gradient(120deg, color-mix(in srgb, var(--accent) 13%, transparent), transparent 45%),
-    color-mix(in srgb, var(--panel) 82%, var(--bg));
-  box-shadow: 0 12px 28px color-mix(in srgb, #000 24%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  box-shadow: 0 4px 8px color-mix(in srgb, #000 18%, transparent);
 }
 
 .guide-now-kicker {
   display: block;
   margin-bottom: 8px;
   color: var(--accent);
-  font: 700 10px "Consolas", monospace;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font: 700 11px "Consolas", monospace;
+  letter-spacing: 0.04em;
 }
 
 .guide-now h3 {
@@ -371,6 +395,7 @@ h1 {
   color: var(--text);
   font: 600 22px "Bahnschrift Condensed", "Arial Narrow", "Segoe UI", sans-serif;
   letter-spacing: 0.02em;
+  text-wrap: balance;
 }
 
 .guide-now p {
@@ -420,12 +445,11 @@ h1 {
 .guide-task-copy small,
 .guide-task-status {
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .guide-task-status {
   font-family: "Consolas", monospace;
-  text-transform: uppercase;
 }
 
 .guide-task--active {
@@ -435,7 +459,7 @@ h1 {
 
 .guide-task--active .guide-task-marker {
   border-color: var(--accent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 65%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .guide-task--complete .guide-task-marker,
@@ -474,7 +498,7 @@ h1 {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
   font-weight: 700;
-  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .guide-skip {
@@ -493,6 +517,52 @@ h1 {
 .guide-shell--lab .guide-now,
 .guide-shell--lab .guide-actions {
   display: none;
+}
+
+.lab-nav {
+  display: none;
+}
+
+body[data-app-mode="lab"] .lab-nav {
+  position: sticky;
+  z-index: 20;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px;
+  overflow-x: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 4px 8px color-mix(in srgb, #000 18%, transparent);
+}
+
+body[data-app-mode="lab"][data-connection-state="disconnected"] .lab-nav,
+body[data-app-mode="lab"][data-connection-state="disconnected"] .grid.disconnected {
+  display: none;
+}
+
+body[data-connection-state="disconnected"] .header-actions {
+  display: none;
+}
+
+.lab-nav > span {
+  flex: 0 0 auto;
+  padding-inline: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lab-nav button {
+  flex: 0 0 auto;
+  min-height: 36px;
+}
+
+body[data-app-mode="lab"] .panel {
+  scroll-margin-top: 76px;
 }
 
 body[data-app-mode="guided"] #openMashTestBtn,
@@ -601,7 +671,8 @@ body[data-app-mode="guided"] .neutral-panel { order: -1; }
 .measurement-instruction {
   margin: 12px 0 18px;
   padding: 12px 14px;
-  border-left: 3px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--panel-border));
+  border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 6%, var(--bg));
   color: var(--text);
   font-size: 13px;
@@ -613,11 +684,11 @@ body[data-app-mode="guided"] .neutral-panel { order: -1; }
 }
 
 .measurement-instruction[data-status="ok"] {
-  border-left-color: var(--status-ok);
+  border-color: color-mix(in srgb, var(--status-ok) 55%, var(--panel-border));
 }
 
 .measurement-instruction[data-status="warn"] {
-  border-left-color: var(--status-warn);
+  border-color: color-mix(in srgb, var(--status-warn) 55%, var(--panel-border));
 }
 
 .results-grid {
@@ -630,21 +701,19 @@ body[data-app-mode="guided"] .neutral-panel { order: -1; }
   min-width: 0;
   padding: 15px;
   border: 1px solid var(--panel-border);
-  border-left-width: 3px;
   border-radius: 8px;
   background: var(--bg);
 }
 
-.result-card--ok { border-left-color: var(--status-ok); }
-.result-card--warn { border-left-color: var(--status-warn); }
-.result-card--bad { border-left-color: var(--status-bad); }
-.result-card--neutral { border-left-color: var(--text-dim); }
+.result-card--ok { border-color: color-mix(in srgb, var(--status-ok) 45%, var(--panel-border)); }
+.result-card--warn { border-color: color-mix(in srgb, var(--status-warn) 45%, var(--panel-border)); }
+.result-card--bad { border-color: color-mix(in srgb, var(--status-bad) 45%, var(--panel-border)); }
+.result-card--neutral { border-color: color-mix(in srgb, var(--text-dim) 35%, var(--panel-border)); }
 
 .result-card-status {
   color: var(--text-dim);
-  font: 600 9px "Consolas", monospace;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font: 600 11px "Consolas", monospace;
+  letter-spacing: 0.03em;
 }
 
 .result-card--ok .result-card-status { color: var(--status-ok); }
@@ -783,7 +852,7 @@ canvas.stick {
   padding: 10px 4px;
   font-size: 11px;
   color: var(--text-dim);
-  transition: all 0.08s ease;
+  transition: background-color 0.08s ease, border-color 0.08s ease, color 0.08s ease, box-shadow 0.08s ease;
 }
 
 .btn-cell.active {
@@ -1011,13 +1080,17 @@ button {
   font-size: 12px;
   min-height: 40px;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
 }
 
 button:hover {
   border-color: var(--accent);
   color: var(--accent);
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 button:disabled,
@@ -1028,6 +1101,7 @@ button:disabled:hover {
   color: var(--text-dim);
   box-shadow: none;
   animation: none;
+  transform: none;
 }
 
 button:focus-visible {
@@ -1060,6 +1134,8 @@ button.btn-highlight:hover {
 
 @media (prefers-reduced-motion: reduce) {
   button.btn-highlight { animation: none; box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent); }
+  button { transition-duration: 0.01ms; }
+  button:active:not(:disabled) { transform: none; }
 }
 
 select, input[type="text"] {
@@ -1133,9 +1209,8 @@ select option {
   padding: 0 12px;
   border-bottom: 1px solid var(--panel-border);
   color: var(--text-dim);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .press-log-columns span:nth-child(n + 3) {
@@ -1187,10 +1262,9 @@ select option {
   border: 1px solid var(--panel-border);
   border-radius: 999px;
   color: var(--text-dim);
-  font-size: 9px;
-  line-height: 11px;
+  font-size: 11px;
+  line-height: 14px;
   text-align: center;
-  text-transform: uppercase;
 }
 
 .press-log-entry:first-child {
@@ -1343,7 +1417,8 @@ select option {
 .mash-estimate {
   margin: 12px 0 0;
   padding: 10px 12px;
-  border-left: 3px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--panel-border));
+  border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 8%, var(--bg));
   color: var(--text);
   font: 600 12px/1.5 "Consolas", monospace;
@@ -1403,9 +1478,8 @@ select option {
 
 .mash-table th {
   color: var(--text-dim);
-  text-transform: uppercase;
-  font-size: 10px;
-  letter-spacing: 1px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .mash-table tbody tr:hover {
@@ -1485,6 +1559,46 @@ select option {
 
   .header-row {
     align-items: stretch;
+  }
+
+  .export-status {
+    align-self: stretch;
+    margin-top: 0;
+    text-align: center;
+  }
+
+  .guide-copy h2 {
+    font-size: 28px;
+  }
+
+  .field,
+  .guide-kicker,
+  .panel-kicker,
+  .guide-now-kicker,
+  .result-card-status {
+    font-size: 12px;
+  }
+
+  body[data-app-mode="lab"] .lab-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    top: 4px;
+    overflow-x: visible;
+    margin-inline: -4px;
+  }
+
+  .lab-nav > span {
+    display: none;
+  }
+
+  .lab-nav button {
+    width: 100%;
+    min-height: 44px;
+    padding-inline: 8px;
+  }
+
+  body[data-app-mode="lab"] .panel {
+    scroll-margin-top: 126px;
   }
 
   .header-controls {
@@ -1622,6 +1736,10 @@ select option {
 @media (max-width: 560px) {
   h1 {
     font-size: 20px;
+  }
+
+  .guide-copy h2 {
+    font-size: 26px;
   }
 
   .header-id,

@@ -50,7 +50,7 @@ export function buildGuideFlow({
   };
 
   const tasksByStep = {
-    overview: [task("connection", "Manette reconnue", taskState({ complete: connected }))],
+    overview: [task("connection", "Manette détectée", taskState({ complete: connected }))],
     sticks: [
       task("neutral", "Point neutre des deux sticks", taskState({ complete: neutral.measured, active: neutral.active }), "Mesure de 3 s"),
       task("amplitude-left", "Amplitude du stick gauche", taskState(calibration.left), "Rotation complète"),

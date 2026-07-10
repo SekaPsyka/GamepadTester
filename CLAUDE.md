@@ -19,6 +19,7 @@ App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette
 - `src/gamepad.js` — accès Gamepad API, détection de type de manette, labels de boutons, dead zone, état pressé digital/analogique (`isButtonPressed`), détection de drift du point neutre (`NeutralDriftTracker`) et de stabilité des gâchettes tenues à un palier (`TriggerStabilityTracker`).
 - `src/controllerSilhouette.js` — silhouette visuelle (image SVG Xbox/PlayStation + zones de surbrillance positionnées en % du viewBox d'origine). Layouts de boutons/sticks codés en dur dans `LAYOUTS`. Se dégrade proprement (frame caché) pour les manettes "generic".
 - `src/mashTest.js` — diagnostic répété des boutons (chatter / doubles déclenchements involontaires et fiabilité de la session).
+- `src/diagnosticSummary.js` — logique pure des états de synthèse, du statut de connexion et des formulations françaises de fiabilité partagées par l'interface et le PDF.
 - `src/themes.js` / `src/storage.js` — thèmes de couleur (CSS custom properties) et persistance `localStorage`.
 - `src/style.css` — feuille de style unique, pas de CSS modules.
 - `src/assets/controllers/*.svg` — assets visuels de manette, voir `CREDITS.md` (licence MIT, Gamepad Asset Pack).

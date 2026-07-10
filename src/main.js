@@ -1,6 +1,4 @@
 import "./style.css";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import {
   applyDeadzone,
   detectControllerType,
@@ -20,6 +18,11 @@ import { THEMES, applyTheme } from "./themes.js";
 import { MashSequenceTest, buildMashQueue, gradeForChatter, chatterRate, buildMashVerdict } from "./mashTest.js";
 import { createSilhouette, setSilhouetteType, updateSilhouette } from "./controllerSilhouette.js";
 import { buildGuideFlow, executeHapticCommand } from "./guideFlow.js";
+import {
+  buildConnectionVerdict,
+  getDiagnosticSummaryState,
+  reliabilityAdjective,
+} from "./diagnosticSummary.js";
 
 const app = document.getElementById("app");
 
@@ -28,7 +31,7 @@ app.innerHTML = `
     <div class="header-row header-row--brand">
       <div class="header-id">
         <h1>Gamepad Tester</h1>
-        <div class="status-pill"><span class="dot" id="dot"></span><span id="padName">Aucune manette détectée</span></div>
+        <div class="status-pill" role="status" aria-live="polite"><span class="dot" id="dot"></span><span id="padName">Aucune manette détectée</span></div>
       </div>
     </div>
     <div class="header-row">
@@ -42,6 +45,7 @@ app.innerHTML = `
         <button id="resetDataBtn" class="danger" title="Réinitialise les calibrations, le drift, les mesures de gâchettes, les boutons et l'historique">Réinitialiser les données</button>
       </div>
     </div>
+    <p class="export-status" id="exportReportStatus" role="status" aria-live="polite"></p>
   </header>
 
   <div class="empty-state" id="emptyState">
@@ -58,8 +62,8 @@ app.innerHTML = `
     <div class="guide-main">
       <div class="guide-copy">
         <span class="guide-kicker" id="guideKicker">Étape 1 sur 5 · Connexion</span>
-        <h2 id="guideTitle">Vérifiez d'abord la manette détectée</h2>
-        <p id="guideDescription">L'application commence par vérifier l'identité, le mapping et les capacités exposées par le navigateur.</p>
+        <h2 id="guideTitle">Manette détectée automatiquement</h2>
+        <p id="guideDescription">Le navigateur identifie la manette et les commandes qu'elle expose.</p>
       </div>
       <div class="guide-progress" id="guideProgressLabel">Connexion en attente</div>
     </div>
@@ -74,10 +78,11 @@ app.innerHTML = `
       <div class="guide-now-copy">
         <span class="guide-now-kicker">À faire maintenant</span>
         <h3 id="guideNowTitle">Vérifiez la manette reconnue</h3>
-        <p id="guideNowDescription">Confirmez que le nom et le nombre de commandes correspondent à votre manette.</p>
+        <p id="guideNowDescription">Le nom, le nombre de boutons et le nombre d'axes exposés par le navigateur sont affichés ci-dessous.</p>
       </div>
       <ol class="guide-task-list" id="guideTaskList"></ol>
     </section>
+    <p class="sr-only" id="guideLiveStatus" role="status" aria-live="polite" aria-atomic="true"></p>
     <div class="guide-actions">
       <button type="button" id="guidePrevBtn" disabled>Étape précédente</button>
       <button type="button" id="guideContextAction" class="guide-context-action hidden"></button>
@@ -86,8 +91,17 @@ app.innerHTML = `
     </div>
   </section>
 
+  <nav class="lab-nav" id="labNav" aria-label="Accès rapide aux outils du laboratoire">
+    <span>Accès rapide</span>
+    <button type="button" data-lab-target="devicePanel">Manette</button>
+    <button type="button" data-lab-target="leftStickPanel">Sticks</button>
+    <button type="button" data-lab-target="triggerPanel">Gâchettes</button>
+    <button type="button" data-lab-target="buttonsPanel">Boutons</button>
+    <button type="button" data-lab-target="resultsPanel">Résultats</button>
+  </nav>
+
   <div class="grid" id="grid">
-    <section class="panel device-panel span-2" data-guide-section="overview">
+    <section class="panel device-panel span-2" id="devicePanel" data-guide-section="overview">
       <div class="device-panel-copy">
         <span class="panel-kicker">Contrôle de compatibilité</span>
         <h2>Manette détectée</h2>
@@ -102,7 +116,7 @@ app.innerHTML = `
       <div class="device-visual" id="silhouetteContainer"></div>
     </section>
 
-    <section class="panel stick-panel stick-panel--left" data-guide-section="sticks">
+    <section class="panel stick-panel stick-panel--left" id="leftStickPanel" data-guide-section="sticks">
       <h2>Joystick gauche</h2>
       <div class="stick-row">
         <canvas class="stick" id="leftCanvas" width="180" height="180" aria-label="Position du joystick gauche"></canvas>
@@ -164,7 +178,7 @@ app.innerHTML = `
       <p class="note">Ces courbes montrent la stabilité pendant la mesure. Un résultat n'est validé que si la manette reste immobile.</p>
     </section>
 
-    <section class="panel panel--trigger-vibration span-2" data-guide-section="triggers">
+    <section class="panel panel--trigger-vibration span-2" id="triggerPanel" data-guide-section="triggers">
       <h2>Gâchettes &amp; vibration</h2>
       <p class="measurement-instruction">Maintenez chaque gâchette à mi-course pendant cinq secondes. La mesure décrit la régularité du signal, sans prétendre certifier l'état mécanique du capteur.</p>
       <div class="trigger-gauges">
@@ -181,13 +195,13 @@ app.innerHTML = `
       </div>
 
       <p class="note" style="margin:0 0 6px">Historique des gâchettes (<span class="legend-dot legend-dot--accent"></span> LT, <span class="legend-dot legend-dot--accent-alt"></span> RT)</p>
-      <canvas class="graph" id="triggerHistoryGraph" width="1200" height="70"></canvas>
+      <canvas class="graph" id="triggerHistoryGraph" width="1200" height="70" role="img" aria-label="Historique du signal des gâchettes LT et RT"></canvas>
       <p class="note">Un tracé irrégulier mérite une seconde mesure dans les mêmes conditions avant toute conclusion sur le capteur.</p>
 
       <div class="vib-section">
         <div class="vib-section-head">
           <h3>Vibrations</h3>
-          <span class="vib-status" id="vibStatus">Aucune manette</span>
+          <span class="vib-status" id="vibStatus" role="status" aria-live="polite">Aucune manette</span>
         </div>
 
         <div class="motor-cards">
@@ -224,7 +238,7 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section class="panel span-2" data-guide-section="buttons">
+    <section class="panel span-2" id="buttonsPanel" data-guide-section="buttons">
       <h2>Boutons <span class="note" style="display:inline">(doubles déclenchements détectés : <span id="chatterCount" class="value mono" style="color:var(--accent-alt)">0</span>)</span></h2>
       <div class="buttons-grid" id="buttonsGrid"></div>
       <p class="note">Un double déclenchement involontaire, aussi appelé chatter, est signalé lorsqu'un bouton se relâche puis se réenfonce en moins de 60 ms. Un événement isolé doit toujours être confirmé par le diagnostic guidé.</p>
@@ -245,13 +259,13 @@ app.innerHTML = `
       <p class="note">Les dix derniers appuis sont conservés pour repérer les doubles déclenchements et vérifier le déroulement du test.</p>
     </section>
 
-    <section class="panel span-2 results-panel" data-guide-section="summary">
+    <section class="panel span-2 results-panel" id="resultsPanel" data-guide-section="summary">
       <div class="results-heading">
         <div>
           <span class="panel-kicker">Synthèse traçable</span>
           <h2>Résultats du diagnostic</h2>
         </div>
-        <span class="confidence-chip" id="summaryConfidence">Diagnostic incomplet</span>
+        <span class="confidence-chip" id="summaryConfidence" role="status">Diagnostic incomplet</span>
       </div>
       <p class="measurement-instruction" id="summaryLead">Les résultats distinguent les mesures validées, les points à confirmer et les tests non réalisés.</p>
       <div class="results-grid" id="summaryResults" aria-live="polite"></div>
@@ -331,22 +345,25 @@ const guideProgressLabel = document.getElementById("guideProgressLabel");
 const guideNowTitle = document.getElementById("guideNowTitle");
 const guideNowDescription = document.getElementById("guideNowDescription");
 const guideTaskList = document.getElementById("guideTaskList");
+const guideLiveStatus = document.getElementById("guideLiveStatus");
 const guidePrevBtn = document.getElementById("guidePrevBtn");
 const guideNextBtn = document.getElementById("guideNextBtn");
 const guideSkipBtn = document.getElementById("guideSkipBtn");
 const guideContextAction = document.getElementById("guideContextAction");
 const guideStepButtons = [...document.querySelectorAll("[data-guide-target]")];
 const modeButtons = [...document.querySelectorAll("[data-app-mode]")];
+const labNavButtons = [...document.querySelectorAll("[data-lab-target]")];
 const guideSections = [...document.querySelectorAll("[data-guide-section]")];
 const exportReportBtn = document.getElementById("exportReportBtn");
+const exportReportStatus = document.getElementById("exportReportStatus");
 const openMashTestBtn = document.getElementById("openMashTestBtn");
 
 const GUIDE_STEPS = [
   {
     id: "overview",
     label: "Connexion",
-    title: "Vérifiez d'abord la manette détectée",
-    description: "L'application contrôle l'identité, le mapping et les capacités réellement exposées par le navigateur.",
+    title: "Manette détectée automatiquement",
+    description: "Le navigateur affiche l'identité, le mapping et les capacités réellement exposées par la manette.",
   },
   {
     id: "sticks",
@@ -378,6 +395,8 @@ let appMode = "guided";
 let guideStepIndex = 0;
 let isPadConnected = null;
 let guideContextHandler = null;
+let lastGuideAnnouncement = "";
+let pdfExportInProgress = false;
 const skippedGuideSteps = new Set();
 
 const TASK_STATE_LABELS = {
@@ -422,7 +441,7 @@ function getGuideFlow() {
 
 function taskInstruction(stepId, taskId) {
   const instructions = {
-    connection: ["Vérifiez la manette reconnue", "Confirmez que le nom, le nombre de boutons et le nombre d'axes correspondent à votre manette."],
+    connection: ["Manette détectée automatiquement", "Le nom, le nombre de boutons et le nombre d'axes exposés par le navigateur sont affichés ci-dessous."],
     neutral: ["Posez la manette et ne la touchez plus", "Démarrez la mesure de trois secondes lorsque les deux sticks sont complètement relâchés."],
     "amplitude-left": ["Testez l'amplitude du stick gauche", "Démarrez l'enregistrement, faites un tour complet et régulier, puis arrêtez pour analyser le tracé."],
     "amplitude-right": ["Testez l'amplitude du stick droit", "Démarrez l'enregistrement, faites un tour complet et régulier, puis arrêtez pour analyser le tracé."],
@@ -459,7 +478,10 @@ function getGuideAction(stepId, nextTask) {
     };
   }
   if (stepId === "buttons" && nextTask) return { label: "Voir les consignes du diagnostic", run: () => openMashTestBtn.click() };
-  if (stepId === "summary") return { label: "Exporter le rapport PDF", run: () => exportReportBtn.click() };
+  if (stepId === "summary") return {
+    label: pdfExportInProgress ? "Préparation du rapport PDF…" : "Exporter le rapport PDF",
+    run: exportDiagnosticReport,
+  };
   return null;
 }
 
@@ -493,17 +515,7 @@ function renderGuidedSummary() {
   const summaryResults = document.getElementById("summaryResults");
   const summaryConfidence = document.getElementById("summaryConfidence");
   const summaryLead = document.getElementById("summaryLead");
-  const hasBad = items.some((item) => item.status === "bad");
-  const hasWarn = items.some((item) => item.status === "warn");
-  const hasUntested = items.some((item) => item.status === "neutral");
-
-  const summaryState = hasBad
-    ? { status: "bad", label: "Problème probable", lead: "Au moins un résultat mérite une vérification matérielle ou un nouveau test." }
-    : hasWarn
-      ? { status: "warn", label: "Points à confirmer", lead: "Certaines mesures sont atypiques ou demandent une seconde tentative." }
-      : hasUntested
-        ? { status: "neutral", label: "Diagnostic incomplet", lead: "Terminez les tests indiqués comme non réalisés avant de conclure." }
-        : { status: "ok", label: "Mesures cohérentes", lead: "Aucun problème n'a été détecté dans les tests réalisés dans de bonnes conditions." };
+  const summaryState = getDiagnosticSummaryState(items);
 
   summaryConfidence.dataset.status = summaryState.status;
   summaryConfidence.textContent = summaryState.label;
@@ -537,7 +549,7 @@ function renderGuide() {
     ? "Branchez-la en USB ou associez-la en Bluetooth, puis appuyez sur un bouton pour que le navigateur la détecte."
     : step.description;
   guideProgressLabel.textContent = step.id === "overview"
-    ? stepState.state === "complete" ? "Connexion vérifiée" : "Connexion en attente"
+    ? stepState.state === "complete" ? "Manette détectée" : "Connexion en attente"
     : stepState.totalCount
       ? stepState.state === "skipped"
       ? "Étape passée — mesures manquantes"
@@ -568,7 +580,14 @@ function renderGuide() {
   guideContextHandler = action?.run || null;
   guideContextAction.classList.toggle("hidden", !action);
   guideContextAction.textContent = action?.label || "";
+  guideContextAction.disabled = step.id === "summary" && pdfExportInProgress;
   guideSkipBtn.classList.toggle("hidden", !isPadConnected || !["sticks", "triggers", "buttons"].includes(step.id) || canContinue);
+
+  const announcement = `${step.label}. ${guideProgressLabel.textContent}. ${nowTitle}. ${nowDescription}`;
+  if (announcement !== lastGuideAnnouncement) {
+    guideLiveStatus.textContent = announcement;
+    lastGuideAnnouncement = announcement;
+  }
 
   const firstBlockingIndex = GUIDE_STEPS.slice(0, -1).findIndex(({ id }) => !["complete", "skipped"].includes(flow.steps[id].state));
   guideStepButtons.forEach((button, index) => {
@@ -602,6 +621,14 @@ function setAppMode(mode) {
 }
 
 modeButtons.forEach((button) => button.addEventListener("click", () => setAppMode(button.dataset.appMode)));
+labNavButtons.forEach((button) => button.addEventListener("click", () => {
+  if (appMode !== "lab") return;
+  const target = document.getElementById(button.dataset.labTarget);
+  target?.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    block: "start",
+  });
+}));
 guideStepButtons.forEach((button, index) => button.addEventListener("click", () => {
   guideStepIndex = index;
   renderGuide();
@@ -628,6 +655,7 @@ guideContextAction.addEventListener("click", () => {
 function setConnectedUI(connected) {
   if (isPadConnected === connected) return;
   isPadConnected = connected;
+  document.body.dataset.connectionState = connected ? "connected" : "disconnected";
   dot.classList.toggle("connected", connected);
   emptyState.classList.toggle("visible", !connected);
   grid.classList.toggle("disconnected", !connected);
@@ -1325,7 +1353,7 @@ function renderMashSummaryTable(results) {
   const overallGrade = gradeForChatter(totalChatter, totalPressCount);
   const overall = document.createElement("p");
   overall.className = `mash-overall-grade mash-grade-${overallGrade.key}`;
-  overall.textContent = `Fiabilité globale: ${overallGrade.label} (${totalChatter} chatter sur ${totalPressCount} appuis)`;
+  overall.textContent = `Fiabilité globale : ${reliabilityAdjective(overallGrade, { capitalized: true })} (${totalChatter} double(s) déclenchement(s) sur ${totalPressCount} appuis)`;
   mashSummaryTableEl.appendChild(overall);
 
   const table = document.createElement("table");
@@ -1609,11 +1637,7 @@ function computeDiagnosticVerdict(report) {
     });
   }
 
-  if (!report.gamepad) {
-    items.push({ status: "bad", title: "Manette", text: "Aucune manette connectée au moment de l'export." });
-  } else {
-    items.push({ status: "ok", title: "Manette", text: `${report.gamepad.id} détectée, ${report.gamepad.buttonCount} boutons, ${report.gamepad.axisCount} axes.` });
-  }
+  items.push(buildConnectionVerdict(report.gamepad));
 
   const leftPercent = asymmetryPercent(report.calibration.left);
   const rightPercent = asymmetryPercent(report.calibration.right);
@@ -1738,7 +1762,7 @@ function computeDiagnosticVerdict(report) {
     if (grade.key === "na") {
       text = `${report.chatterEventsTotal} événement(s) détecté(s), pas assez d'appuis en usage normal pour juger du taux réel, à confirmer avec le diagnostic des boutons.${detail}`;
     } else {
-      text = `${report.chatterEventsTotal} événement(s) détecté(s) sur ${report.totalPressCount} appuis (${globalRate}%), fiabilité ${grade.label.toLowerCase()}.${detail}`;
+      text = `${report.chatterEventsTotal} événement(s) détecté(s) sur ${report.totalPressCount} appuis (${globalRate}%), fiabilité ${reliabilityAdjective(grade)}.${detail}`;
     }
     items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Observation libre des boutons", text });
   }
@@ -1758,10 +1782,10 @@ function computeDiagnosticVerdict(report) {
     if (grade.key === "na") {
       text = "Pas assez d'appuis enregistrés pendant le diagnostic pour conclure sur la fiabilité des boutons.";
     } else if (totalChatter === 0) {
-      text = `Test effectué sur ${report.mashTest.length} bouton(s), aucun double déclenchement observé, fiabilité ${grade.label.toLowerCase()}.`;
+      text = `Test effectué sur ${report.mashTest.length} bouton(s), aucun double déclenchement observé, fiabilité ${reliabilityAdjective(grade)}.`;
     } else {
       const worst = [...report.mashTest].sort((a, b) => b.chatterCount - a.chatterCount)[0];
-      text = `Fiabilité ${grade.label.toLowerCase()} (${totalChatter} double(s) déclenchement(s) sur ${totalPressCount} appuis). Bouton le plus touché : ${worst.label} (${worst.chatterCount} fois).`;
+      text = `Fiabilité ${reliabilityAdjective(grade)} (${totalChatter} double(s) déclenchement(s) sur ${totalPressCount} appuis). Bouton le plus touché : ${worst.label} (${worst.chatterCount} fois).`;
     }
     items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Diagnostic des boutons", text });
   }
@@ -1895,7 +1919,7 @@ function pdfKpiCard(doc, x, y, w, h, { label, value, status }) {
   doc.text(label.toUpperCase(), x + w / 2, y + h - 3.2, { align: "center", charSpace: 0.15 });
 }
 
-function buildDiagnosticPdf(report) {
+function buildDiagnosticPdf(report, jsPDF, autoTable) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
 
   // Couleur d'accent alignée sur le thème actif au moment de l'export, pour que le rapport
@@ -1931,7 +1955,7 @@ function buildDiagnosticPdf(report) {
     const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
     const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
     const overallGrade = gradeForChatter(totalChatter, totalPressCount);
-    mashValue = overallGrade.label;
+    mashValue = reliabilityAdjective(overallGrade, { capitalized: true });
     mashStatus = PDF_GRADE_STATUS[overallGrade.key];
   }
 
@@ -2137,7 +2161,7 @@ function buildDiagnosticPdf(report) {
     doc.setFontSize(9.5);
     doc.setTextColor(...PDF_STATUS_COLORS[PDF_GRADE_STATUS[overallGrade.key]]);
     doc.setFont(undefined, "bold");
-    doc.text(`Fiabilité globale: ${overallGrade.label} (${totalChatter} chatter sur ${totalPressCount} appuis)`, PDF_MARGIN + 2, y);
+    doc.text(`Fiabilité globale : ${reliabilityAdjective(overallGrade, { capitalized: true })} (${totalChatter} double(s) déclenchement(s) sur ${totalPressCount} appuis)`, PDF_MARGIN + 2, y);
     doc.setFont(undefined, "normal");
     y += 7;
     const mashGrades = report.mashTest.map((r) => gradeForChatter(r.chatterCount, r.pressCount));
@@ -2226,12 +2250,38 @@ function buildDiagnosticPdf(report) {
   return doc;
 }
 
-document.getElementById("exportReportBtn").addEventListener("click", () => {
-  const report = buildDiagnosticReport();
-  const doc = buildDiagnosticPdf(report);
-  const padSlug = report.gamepad ? slugify(report.gamepad.id).slice(0, 40) : "sans-manette";
-  doc.save(`gamepad-report-${padSlug}-${new Date().toISOString().replace(/[:.]/g, "-")}.pdf`);
-});
+async function exportDiagnosticReport() {
+  if (pdfExportInProgress) return;
+  pdfExportInProgress = true;
+  exportReportBtn.disabled = true;
+  exportReportBtn.textContent = "Préparation du PDF…";
+  exportReportStatus.dataset.status = "active";
+  exportReportStatus.textContent = "Préparation du rapport PDF…";
+
+  try {
+    renderGuide();
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const report = buildDiagnosticReport();
+    const doc = buildDiagnosticPdf(report, jsPDF, autoTable);
+    const padSlug = report.gamepad ? slugify(report.gamepad.id).slice(0, 40) : "sans-manette";
+    doc.save(`gamepad-report-${padSlug}-${new Date().toISOString().replace(/[:.]/g, "-")}.pdf`);
+    exportReportStatus.dataset.status = "ok";
+    exportReportStatus.textContent = "Rapport PDF généré. Le téléchargement a été lancé.";
+  } catch {
+    exportReportStatus.dataset.status = "error";
+    exportReportStatus.textContent = "Le rapport PDF n'a pas pu être préparé. Gardez cet onglet actif, puis réessayez.";
+  } finally {
+    pdfExportInProgress = false;
+    exportReportBtn.disabled = !isPadConnected;
+    exportReportBtn.textContent = "Exporter rapport (PDF)";
+    renderGuide();
+  }
+}
+
+exportReportBtn.addEventListener("click", exportDiagnosticReport);
 
 document.getElementById("resetDataBtn").addEventListener("click", () => {
   if (!window.confirm("Réinitialiser toutes les mesures collectées (sticks, gâchettes, boutons et historique) ? Cette action est irréversible.")) {
