@@ -1,5 +1,17 @@
 import { CHATTER_THRESHOLD_MS, isButtonPressed } from "./gamepad.js";
 
+const SYSTEM_BUTTON_LABELS = new Set(["Guide", "PS"]);
+
+// Les boutons système peuvent être interceptés par l'OS ou le navigateur et ne répondent
+// pas de façon homogène. Les demander dans une séquence répétée peut bloquer le diagnostic
+// sans apporter d'information fiable sur les contacts mécaniques de la manette.
+export function buildMashQueue(labels, buttonCount) {
+  return Array.from({ length: Math.min(labels.length, buttonCount) }, (_, index) => ({
+    index,
+    label: labels[index] || `Bouton ${index}`,
+  })).filter(({ label }) => !SYSTEM_BUTTON_LABELS.has(label));
+}
+
 // Un écart anormalement long entre deux frames (onglet en arrière-plan, throttling
 // du navigateur, pause GC...) peut faire manquer un relâché/ré-appui ou au contraire
 // fusionner deux frames en un faux chatter. Un tel écart rend la mesure du bouton en
@@ -146,7 +158,7 @@ export function gradeForChatter(chatterCount, pressCount) {
 export function buildMashVerdict(results) {
   const graded = results.filter((r) => gradeForChatter(r.chatterCount, r.pressCount).key !== "na");
   if (graded.length === 0) {
-    return { tone: "neutral", text: "Pas assez d'appuis enregistrés pour conclure sur la fiabilité des boutons, retestez avec un mashing plus soutenu." };
+    return { tone: "neutral", text: "Pas assez d'appuis enregistrés pour conclure sur les boutons. Recommencez avec un rythme plus soutenu et régulier." };
   }
 
   const problematic = graded.filter((r) => {
@@ -155,14 +167,14 @@ export function buildMashVerdict(results) {
   });
 
   if (problematic.length === 0) {
-    return { tone: "ok", text: "Manette fiable: aucun signe d'usure détecté sur les boutons testés." };
+    return { tone: "ok", text: "Aucun double déclenchement involontaire observé sur les boutons suffisamment testés pendant cette session." };
   }
 
   const ratio = problematic.length / graded.length;
   if (ratio >= 0.7) {
     return {
       tone: "bad",
-      text: `Chatter détecté sur la quasi-totalité des boutons testés (${problematic.length}/${graded.length}), ce profil est plutôt caractéristique d'un problème matériel (switch, carte, connexion) que de faux positifs isolés.`,
+      text: `Doubles déclenchements observés sur la quasi-totalité des boutons suffisamment testés (${problematic.length}/${graded.length}). Recommencez la session dans de bonnes conditions avant de suspecter un problème matériel ou de connexion.`,
     };
   }
 
@@ -170,12 +182,12 @@ export function buildMashVerdict(results) {
   if (problematic.length <= 2) {
     return {
       tone: "warn",
-      text: `Résultat globalement bon. Seul(s) ${labels} montre(nt) un taux de chatter élevé, ça peut venir d'un contact qui s'use, mais aussi d'un faux contact ponctuel. Retestez ce(s) bouton(s) avant de conclure à un défaut matériel.`,
+      text: `Résultat globalement cohérent. ${labels} montre(nt) un taux inhabituel de doubles déclenchements. Retestez ce(s) bouton(s) avant toute conclusion.`,
     };
   }
 
   return {
     tone: "warn",
-    text: `Plusieurs boutons (${problematic.length}/${graded.length}) montrent un taux de chatter inhabituel: ${labels}. Si ça touche des boutons sans rapport mécanique entre eux, vérifiez d'abord le navigateur, le pilote ou la connexion (filaire/sans-fil) avant de soupçonner un défaut matériel.`,
+    text: `Plusieurs boutons (${problematic.length}/${graded.length}) montrent un taux inhabituel de doubles déclenchements : ${labels}. Vérifiez d'abord le navigateur, le pilote et la connexion, puis recommencez le test.`,
   };
 }
