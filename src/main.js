@@ -1,337 +1,36 @@
 import "./style.css";
+import { APP_MARKUP } from "./appMarkup.js";
 import {
   applyDeadzone,
   detectControllerType,
   getConnectedGamepads,
   getLabelsFor,
   CHATTER_THRESHOLD_MS,
-  NeutralDriftTracker,
   NEUTRAL_DRIFT_WARN_THRESHOLD,
-  NEUTRAL_DRIFT_BAD_THRESHOLD,
   isButtonPressed,
-  TriggerStabilityTracker,
   TRIGGER_REQUIRED_HOLD_MS,
   triggerStabilityGrade,
 } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
 import { THEMES, applyTheme } from "./themes.js";
-import { MashSequenceTest, buildMashQueue, gradeForChatter, chatterRate, buildMashVerdict } from "./mashTest.js";
+import { MashSequenceTest, buildMashQueue, gradeForChatter, buildMashVerdict } from "./mashTest.js";
 import { createSilhouette, setSilhouetteType, updateSilhouette } from "./controllerSilhouette.js";
 import { buildGuideFlow, executeHapticCommand } from "./guideFlow.js";
+import { DiagnosticSession } from "./diagnosticSession.js";
+import { analyzeStickRange } from "./stickDiagnostics.js";
 import {
-  buildConnectionVerdict,
+  buildDiagnosticReport as createDiagnosticReport,
+  computeDiagnosticVerdict,
+} from "./diagnosticReport.js";
+import { buildDiagnosticPdf, slugify } from "./diagnosticPdf.js";
+import {
   getDiagnosticSummaryState,
   reliabilityAdjective,
 } from "./diagnosticSummary.js";
 
 const app = document.getElementById("app");
 
-app.innerHTML = `
-  <header>
-    <div class="header-row header-row--brand">
-      <div class="header-id">
-        <h1>Gamepad Tester</h1>
-        <div class="status-pill" role="status" aria-live="polite"><span class="dot" id="dot"></span><span id="padName">Aucune manette détectée</span></div>
-      </div>
-    </div>
-    <div class="header-row">
-      <div class="header-controls">
-        <label class="field">Thème<select id="themeSelect"></select></label>
-        <label class="field">Manette<select id="padSelect"><option value="">Aucune manette</option></select></label>
-      </div>
-      <div class="header-actions">
-        <button id="openMashTestBtn" class="btn-highlight" title="Teste chaque bouton avec des appuis rapides et réguliers pour repérer les doubles déclenchements involontaires">Diagnostic des boutons</button>
-        <button id="exportReportBtn" title="Exporte un rapport de diagnostic en PDF avec l'état actuel de la manette">Exporter rapport (PDF)</button>
-        <button id="resetDataBtn" class="danger" title="Réinitialise les calibrations, le drift, les mesures de gâchettes, les boutons et l'historique">Réinitialiser les données</button>
-      </div>
-    </div>
-    <p class="export-status" id="exportReportStatus" role="status" aria-live="polite"></p>
-  </header>
-
-  <div class="empty-state" id="emptyState">
-    <div class="empty-state-pulse"></div>
-    <h2>En attente d'une manette</h2>
-    <p>Branchez une manette filaire ou appairez-la en Bluetooth, puis appuyez sur un bouton pour la réveiller.</p>
-  </div>
-
-  <section class="guide-shell" id="guideShell" aria-labelledby="guideTitle">
-    <div class="mode-switch" role="group" aria-label="Mode d'affichage">
-      <button class="mode-switch-button active" type="button" data-app-mode="guided" aria-pressed="true">Diagnostic guidé</button>
-      <button class="mode-switch-button" type="button" data-app-mode="lab" aria-pressed="false">Mode laboratoire</button>
-    </div>
-    <div class="guide-main">
-      <div class="guide-copy">
-        <span class="guide-kicker" id="guideKicker">Étape 1 sur 5 · Connexion</span>
-        <h2 id="guideTitle">Manette détectée automatiquement</h2>
-        <p id="guideDescription">Le navigateur identifie la manette et les commandes qu'elle expose.</p>
-      </div>
-      <div class="guide-progress" id="guideProgressLabel">Connexion en attente</div>
-    </div>
-    <nav class="guide-steps" aria-label="Étapes du diagnostic">
-      <button type="button" data-guide-target="overview" class="active" aria-current="step"><span>1</span>Connexion</button>
-      <button type="button" data-guide-target="sticks"><span>2</span>Sticks</button>
-      <button type="button" data-guide-target="triggers"><span>3</span>Gâchettes</button>
-      <button type="button" data-guide-target="buttons"><span>4</span>Boutons</button>
-      <button type="button" data-guide-target="summary"><span>5</span>Résultats</button>
-    </nav>
-    <section class="guide-now" id="guideNow" aria-labelledby="guideNowTitle">
-      <div class="guide-now-copy">
-        <span class="guide-now-kicker">À faire maintenant</span>
-        <h3 id="guideNowTitle">Vérifiez la manette reconnue</h3>
-        <p id="guideNowDescription">Le nom, le nombre de boutons et le nombre d'axes exposés par le navigateur sont affichés ci-dessous.</p>
-      </div>
-      <ol class="guide-task-list" id="guideTaskList"></ol>
-    </section>
-    <p class="sr-only" id="guideLiveStatus" role="status" aria-live="polite" aria-atomic="true"></p>
-    <div class="guide-actions">
-      <button type="button" id="guidePrevBtn" disabled>Étape précédente</button>
-      <button type="button" id="guideContextAction" class="guide-context-action hidden"></button>
-      <button type="button" id="guideSkipBtn" class="guide-skip hidden">Passer cette étape</button>
-      <button type="button" id="guideNextBtn" class="btn-highlight">Continuer vers les sticks</button>
-    </div>
-  </section>
-
-  <nav class="lab-nav" id="labNav" aria-label="Accès rapide aux outils du laboratoire">
-    <span>Accès rapide</span>
-    <button type="button" data-lab-target="devicePanel">Manette</button>
-    <button type="button" data-lab-target="leftStickPanel">Sticks</button>
-    <button type="button" data-lab-target="triggerPanel">Gâchettes</button>
-    <button type="button" data-lab-target="buttonsPanel">Boutons</button>
-    <button type="button" data-lab-target="resultsPanel">Résultats</button>
-  </nav>
-
-  <div class="grid" id="grid">
-    <section class="panel device-panel span-2" id="devicePanel" data-guide-section="overview">
-      <div class="device-panel-copy">
-        <span class="panel-kicker">Contrôle de compatibilité</span>
-        <h2>Manette détectée</h2>
-        <strong id="deviceName">Aucune manette</strong>
-        <p id="deviceMapping">Connectez une manette pour vérifier son mapping.</p>
-        <div class="device-facts">
-          <span id="deviceButtons">— boutons</span>
-          <span id="deviceAxes">— axes</span>
-          <span id="deviceSupport">Compatibilité inconnue</span>
-        </div>
-      </div>
-      <div class="device-visual" id="silhouetteContainer"></div>
-    </section>
-
-    <section class="panel stick-panel stick-panel--left" id="leftStickPanel" data-guide-section="sticks">
-      <h2>Joystick gauche</h2>
-      <div class="stick-row">
-        <canvas class="stick" id="leftCanvas" width="180" height="180" aria-label="Position du joystick gauche"></canvas>
-        <div class="sliders" style="flex:1">
-          <label for="leftInner">Zone morte intérieure : <span class="mono" id="leftInnerVal"></span></label>
-          <input type="range" id="leftInner" min="0" max="0.9" step="0.01" value="0.1" />
-          <label for="leftOuter">Zone morte extérieure : <span class="mono" id="leftOuterVal"></span></label>
-          <input type="range" id="leftOuter" min="0.1" max="1" step="0.01" value="0.95" />
-          <div class="coord">
-            Brut: <b class="mono" id="leftRaw">0.00, 0.00</b><br/>
-            Ajusté: <b class="mono" id="leftAdj">0.00, 0.00</b>
-          </div>
-          <div class="calib-actions">
-            <button id="leftCalibBtn">Tester l'amplitude du stick</button>
-            <button id="leftCalibReset" class="danger">Réinitialiser</button>
-          </div>
-          <p class="note" id="leftCalibResult"></p>
-          <p class="note" id="leftNeutralResult">Point neutre : non testé</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel stick-panel stick-panel--right" data-guide-section="sticks">
-      <h2>Joystick droit</h2>
-      <div class="stick-row">
-        <canvas class="stick" id="rightCanvas" width="180" height="180" aria-label="Position du joystick droit"></canvas>
-        <div class="sliders" style="flex:1">
-          <label for="rightInner">Zone morte intérieure : <span class="mono" id="rightInnerVal"></span></label>
-          <input type="range" id="rightInner" min="0" max="0.9" step="0.01" value="0.1" />
-          <label for="rightOuter">Zone morte extérieure : <span class="mono" id="rightOuterVal"></span></label>
-          <input type="range" id="rightOuter" min="0.1" max="1" step="0.01" value="0.95" />
-          <div class="coord">
-            Brut: <b class="mono" id="rightRaw">0.00, 0.00</b><br/>
-            Ajusté: <b class="mono" id="rightAdj">0.00, 0.00</b>
-          </div>
-          <div class="calib-actions">
-            <button id="rightCalibBtn">Tester l'amplitude du stick</button>
-            <button id="rightCalibReset" class="danger">Réinitialiser</button>
-          </div>
-          <p class="note" id="rightCalibResult"></p>
-          <p class="note" id="rightNeutralResult">Point neutre : non testé</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel neutral-panel span-2" id="neutralPanel" data-guide-section="sticks">
-      <div class="panel-heading-row">
-        <div>
-          <span class="panel-kicker">Mesure guidée</span>
-          <h2>Point neutre et stabilité des sticks</h2>
-        </div>
-        <button type="button" id="measureNeutralBtn">Mesurer le point neutre</button>
-      </div>
-      <p class="measurement-instruction" id="neutralCaptureStatus">Posez la manette à plat, relâchez les sticks, puis lancez une mesure de trois secondes.</p>
-      <p class="note" style="margin:0 0 6px">Gauche</p>
-      <canvas class="graph" id="driftGraphLeft" width="1200" height="70" aria-label="Stabilité horizontale du joystick gauche"></canvas>
-      <p class="note" style="margin:14px 0 6px">Droit</p>
-      <canvas class="graph" id="driftGraphRight" width="1200" height="70" aria-label="Stabilité horizontale du joystick droit"></canvas>
-      <p class="note">Ces courbes montrent la stabilité pendant la mesure. Un résultat n'est validé que si la manette reste immobile.</p>
-    </section>
-
-    <section class="panel panel--trigger-vibration span-2" id="triggerPanel" data-guide-section="triggers">
-      <h2>Gâchettes &amp; vibration</h2>
-      <p class="measurement-instruction">Maintenez chaque gâchette à mi-course pendant cinq secondes. La mesure décrit la régularité du signal, sans prétendre certifier l'état mécanique du capteur.</p>
-      <div class="trigger-gauges">
-        <div class="trigger-gauge">
-          <div class="trigger-label"><span>LT</span><span class="mono" id="ltVal">0%</span></div>
-          <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="ltBar"></div></div>
-          <p class="note" id="ltStabilityResult" title="Maintenez la gâchette à mi-course pour observer la régularité du signal exposé par le navigateur.">Stabilité : maintenez à mi-course pour mesurer...</p>
-        </div>
-        <div class="trigger-gauge">
-          <div class="trigger-label"><span>RT</span><span class="mono" id="rtVal">0%</span></div>
-          <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="rtBar"></div></div>
-          <p class="note" id="rtStabilityResult" title="Maintenez la gâchette à mi-course pour observer la régularité du signal exposé par le navigateur.">Stabilité : maintenez à mi-course pour mesurer...</p>
-        </div>
-      </div>
-
-      <p class="note" style="margin:0 0 6px">Historique des gâchettes (<span class="legend-dot legend-dot--accent"></span> LT, <span class="legend-dot legend-dot--accent-alt"></span> RT)</p>
-      <canvas class="graph" id="triggerHistoryGraph" width="1200" height="70" role="img" aria-label="Historique du signal des gâchettes LT et RT"></canvas>
-      <p class="note">Un tracé irrégulier mérite une seconde mesure dans les mêmes conditions avant toute conclusion sur le capteur.</p>
-
-      <div class="vib-section">
-        <div class="vib-section-head">
-          <h3>Vibrations</h3>
-          <span class="vib-status" id="vibStatus" role="status" aria-live="polite">Aucune manette</span>
-        </div>
-
-        <div class="motor-cards">
-          <div class="motor-card" id="motorCardStrong">
-            <div class="motor-card-head"><span>Moteur gauche</span><span class="note">basse fréq. / grave</span></div>
-            <label class="sr-only" for="vibStrongLive">Intensité continue du moteur gauche</label>
-            <input type="range" id="vibStrongLive" min="0" max="1" step="0.01" value="0" />
-            <div class="motor-card-foot">
-              <span class="mono" id="vibStrongLiveVal">0%</span>
-              <button id="vibStrongTest">Tester 600 ms</button>
-            </div>
-          </div>
-          <div class="motor-card" id="motorCardWeak">
-            <div class="motor-card-head"><span>Moteur droit</span><span class="note">haute fréq. / aiguë</span></div>
-            <label class="sr-only" for="vibWeakLive">Intensité continue du moteur droit</label>
-            <input type="range" id="vibWeakLive" min="0" max="1" step="0.01" value="0" />
-            <div class="motor-card-foot">
-              <span class="mono" id="vibWeakLiveVal">0%</span>
-              <button id="vibWeakTest">Tester 600 ms</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="vib-presets">
-          <button id="presetLight">Légère</button>
-          <button id="presetBalanced">Équilibrée</button>
-          <button id="presetIntense">Intense</button>
-          <button id="vibStop" class="danger hidden">Tout arrêter</button>
-        </div>
-        <div class="vib-footnotes">
-          <p class="note">L'application peut envoyer une commande de vibration, mais elle ne peut pas mesurer la force réelle des moteurs. Confirmez le résultat selon ce que vous ressentez.</p>
-          <p class="note" id="vibNote"></p>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel span-2" id="buttonsPanel" data-guide-section="buttons">
-      <h2>Boutons <span class="note" style="display:inline">(doubles déclenchements détectés : <span id="chatterCount" class="value mono" style="color:var(--accent-alt)">0</span>)</span></h2>
-      <div class="buttons-grid" id="buttonsGrid"></div>
-      <p class="note">Un double déclenchement involontaire, aussi appelé chatter, est signalé lorsqu'un bouton se relâche puis se réenfonce en moins de 60 ms. Un événement isolé doit toujours être confirmé par le diagnostic guidé.</p>
-    </section>
-
-    <section class="panel span-2 press-history-panel" data-guide-section="buttons">
-      <h2>Historique des appuis</h2>
-      <div class="press-log-frame">
-        <div class="press-log-columns" aria-hidden="true">
-          <span>Heure</span>
-          <span>Bouton</span>
-          <span class="press-log-heading-value">Valeur</span>
-          <span class="press-log-heading-interval">Depuis précédent</span>
-          <span>Diagnostic</span>
-        </div>
-        <div id="pressLog" class="press-log" role="log" aria-live="polite" aria-label="Historique des dix derniers appuis"></div>
-      </div>
-      <p class="note">Les dix derniers appuis sont conservés pour repérer les doubles déclenchements et vérifier le déroulement du test.</p>
-    </section>
-
-    <section class="panel span-2 results-panel" id="resultsPanel" data-guide-section="summary">
-      <div class="results-heading">
-        <div>
-          <span class="panel-kicker">Synthèse traçable</span>
-          <h2>Résultats du diagnostic</h2>
-        </div>
-        <span class="confidence-chip" id="summaryConfidence" role="status">Diagnostic incomplet</span>
-      </div>
-      <p class="measurement-instruction" id="summaryLead">Les résultats distinguent les mesures validées, les points à confirmer et les tests non réalisés.</p>
-      <div class="results-grid" id="summaryResults" aria-live="polite"></div>
-    </section>
-  </div>
-
-  <footer class="app-footer">
-    Fait par <a href="https://github.com/SekaPsyka" target="_blank" rel="noopener noreferrer">SekaPsyka</a> ·
-    <a href="https://github.com/SekaPsyka/GamepadTester" target="_blank" rel="noopener noreferrer">Code source sur GitHub</a>
-  </footer>
-
-  <div class="mash-overlay" id="mashOverlay" role="dialog" aria-modal="true" aria-labelledby="mashDialogTitle" aria-hidden="true">
-    <div class="mash-panel" tabindex="-1">
-      <div id="mashSetup">
-        <h2 id="mashDialogTitle">Diagnostic des boutons</h2>
-        <p class="note">Préparez-vous avant de commencer : le test passera ensuite automatiquement d'un bouton au suivant. Le bouton système Guide/PS est volontairement exclu.</p>
-        <div class="mash-optimal-conditions">
-          <h3>Pour un résultat fiable</h3>
-          <ul>
-            <li>Appuyez à un rythme <strong>rapide, net et régulier</strong>, en relâchant bien chaque bouton entre deux appuis.</li>
-            <li>Visez <strong>au moins 20 appuis</strong> par bouton sur la durée du test: en dessous, le résultat est jugé pas assez fiable pour conclure (affiché "N/A").</li>
-            <li>Gardez cet onglet visible jusqu'à la fin du diagnostic.</li>
-          </ul>
-          <details>
-            <summary>Conseils supplémentaires</summary>
-            <ul>
-              <li>Utilisez une batterie ou des piles suffisamment chargées.</li>
-              <li>Privilégiez une connexion filaire ; en sans-fil, restez proche du récepteur.</li>
-              <li>Fermez les autres applications susceptibles d'utiliser la manette.</li>
-            </ul>
-          </details>
-        </div>
-        <p class="note" id="mashSetupWarning"></p>
-        <label class="field">Durée par bouton
-          <select id="mashDuration">
-            <option value="5000">5 secondes</option>
-            <option value="10000">10 secondes</option>
-          </select>
-        </label>
-        <p class="mash-estimate" id="mashEstimate"></p>
-        <div class="mash-actions">
-          <button id="mashStartBtn" class="btn-highlight">Commencer le test</button>
-          <button id="mashCancelSetupBtn" class="danger">Annuler</button>
-        </div>
-      </div>
-      <div id="mashRunning" class="hidden">
-        <p class="note" id="mashProgress"></p>
-        <h2 id="mashCurrentLabel"></h2>
-        <div class="mash-timer-bar-bg"><div class="mash-timer-bar-fill" id="mashTimerFill"></div></div>
-        <div class="mash-count" id="mashCount">0</div>
-        <p class="note">appuis</p>
-        <div class="mash-actions">
-          <button id="mashAbortBtn" class="danger">Arrêter le test</button>
-        </div>
-      </div>
-      <div id="mashSummary" class="hidden">
-        <h2>Résultat du diagnostic des boutons</h2>
-        <div id="mashSummaryTable"></div>
-        <div class="mash-actions">
-          <button id="mashRetestBtn">Refaire le test</button>
-          <button id="mashCloseBtn">Fermer</button>
-        </div>
-      </div>
-    </div>
-  </div>
-`;
+app.innerHTML = APP_MARKUP;
 
 const dot = document.getElementById("dot");
 const padName = document.getElementById("padName");
@@ -397,7 +96,16 @@ let isPadConnected = null;
 let guideContextHandler = null;
 let lastGuideAnnouncement = "";
 let pdfExportInProgress = false;
-const skippedGuideSteps = new Set();
+const diagnosticSession = new DiagnosticSession();
+const {
+  calibration,
+  neutralDrift,
+  triggerStability,
+  vibrationCommands,
+  skippedGuideSteps,
+  chatterByButton,
+  pressCountByButton,
+} = diagnosticSession;
 
 const TASK_STATE_LABELS = {
   pending: "À faire",
@@ -422,7 +130,7 @@ function getGuideFlow() {
     connected: Boolean(isPadConnected),
     neutral: {
       measured: leftNeutral.measured && rightNeutral.measured,
-      active: Boolean(neutralCapture),
+      active: Boolean(diagnosticSession.neutralCapture),
     },
     calibration: {
       left: { complete: calibration.left.completed, active: calibration.left.active },
@@ -434,7 +142,7 @@ function getGuideFlow() {
     },
     vibrationSupported: pad ? Boolean(pad.vibrationActuator) : null,
     vibrationCommands,
-    mashCompleted: Boolean(lastMashResults),
+    mashCompleted: Boolean(diagnosticSession.mashResults),
     skippedSteps: [...skippedGuideSteps],
   });
 }
@@ -788,7 +496,7 @@ const vibStatus = document.getElementById("vibStatus");
 const vibStopBtn = document.getElementById("vibStop");
 const motorCardStrong = document.getElementById("motorCardStrong");
 const motorCardWeak = document.getElementById("motorCardWeak");
-const vibrationCommands = { strong: "pending", weak: "pending" };
+
 
 let vibrationActive = false;
 
@@ -846,6 +554,7 @@ async function playRumble(weak, strong, duration = 600, { cards = [], reportInte
 }
 
 async function runGuidedMotorTest(side) {
+  const sessionRevision = diagnosticSession.revision;
   const button = document.getElementById(side === "strong" ? "vibStrongTest" : "vibWeakTest");
   const card = side === "strong" ? motorCardStrong : motorCardWeak;
   vibrationCommands[side] = "running";
@@ -856,6 +565,7 @@ async function runGuidedMotorTest(side) {
     ? await playRumble(0, 1, 600, { cards: [card] })
     : await playRumble(1, 0, 600, { cards: [card] });
   button.disabled = false;
+  if (sessionRevision !== diagnosticSession.revision) return;
   vibrationCommands[side] = result.status === "complete" ? "complete" : "error";
   if (result.status === "complete") {
     vibNote.textContent = "Commande envoyée. L'application ne peut pas mesurer la force réellement produite.";
@@ -1058,64 +768,8 @@ function drawDrift(ctx, canvas, history) {
   ctx.stroke();
 }
 
-const calibration = {
-  left: { active: false, completed: false, points: [] },
-  right: { active: false, completed: false, points: [] },
-};
+
 const calibrationControls = {};
-
-// Analyse le tracé d'un stick par secteurs angulaires plutôt que par une simple rondeur globale.
-// De nombreux sticks (notamment Xbox) ont un guide mécanique carré/octogonal: le rayon
-// varie naturellement selon la direction (souvent plus grand en diagonale qu'à l'horizontale/verticale),
-// mais ce profil reste symétrique. Une vraie anomalie (usure, drift localisé) se traduit par une
-// asymétrie entre deux directions opposées, pas par un simple écart à un cercle parfait.
-const SECTOR_COUNT = 16;
-
-function analyzeRange(points) {
-  if (points.length < 5) return "Pas assez de données, réessayez.";
-
-  // On prend le rayon MAX atteint par secteur angulaire: les points de repos (proches du
-  // centre) ne peuvent jamais devenir ce maximum, donc pas besoin de les filtrer en amont,
-  // et surtout, ça évite d'effacer par erreur une vraie zone de rayon réduit (usure/drift).
-  const sectorMax = new Array(SECTOR_COUNT).fill(0);
-  for (const p of points) {
-    const angle = Math.atan2(p.y, p.x);
-    const normalized = ((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
-    const sector = Math.min(SECTOR_COUNT - 1, Math.floor(normalized * SECTOR_COUNT));
-    const r = Math.hypot(p.x, p.y);
-    if (r > sectorMax[sector]) sectorMax[sector] = r;
-  }
-
-  const filledSectors = sectorMax.filter((r) => r > 0).length;
-  if (filledSectors < SECTOR_COUNT * 0.75) {
-    return "Tracé incomplet, faites un tour à 360° plus régulier pour une analyse fiable.";
-  }
-
-  let maxAsymmetry = 0;
-  let worstPair = null;
-  for (let i = 0; i < SECTOR_COUNT / 2; i++) {
-    const opposite = i + SECTOR_COUNT / 2;
-    const a = sectorMax[i];
-    const b = sectorMax[opposite];
-    if (a === 0 || b === 0) continue;
-    const asymmetry = Math.abs(a - b) / Math.max(a, b);
-    if (asymmetry > maxAsymmetry) {
-      maxAsymmetry = asymmetry;
-      worstPair = [i, opposite];
-    }
-  }
-
-  const globalMin = Math.min(...sectorMax.filter((r) => r > 0));
-  const globalMax = Math.max(...sectorMax);
-  const roundness = (globalMin / globalMax) * 100;
-
-  if (maxAsymmetry < 0.18) {
-    return `Forme symétrique (rondeur globale: ${roundness.toFixed(0)}%), une forme carrée/octogonale est normale sur de nombreux sticks (guide mécanique), aucune anomalie détectée ✓`;
-  }
-
-  const angleDeg = Math.round((worstPair[0] / SECTOR_COUNT) * 360);
-  return `Asymétrie détectée (${(maxAsymmetry * 100).toFixed(0)}%) autour de ${angleDeg}°, une direction atteint un rayon nettement plus court que son opposée, ce qui peut indiquer une usure ou un stick drift localisé plutôt qu'un simple guide carré.`;
-}
 
 function setupCalibration(side, buttonId, resultId, resetId) {
   const btn = document.getElementById(buttonId);
@@ -1127,13 +781,16 @@ function setupCalibration(side, buttonId, resultId, resetId) {
   btn.addEventListener("click", () => toggleCalibration(side));
 
   resetBtn.addEventListener("click", () => {
-    state.active = false;
-    state.completed = false;
-    state.points = [];
-    btn.textContent = "Tester l'amplitude du stick";
-    resultEl.textContent = "";
+    diagnosticSession.resetCalibration(side);
+    syncCalibrationUI(side);
     renderGuide();
   });
+}
+
+function syncCalibrationUI(side) {
+  const { btn, resultEl } = calibrationControls[side];
+  btn.textContent = "Tester l'amplitude du stick";
+  resultEl.textContent = calibration[side].result?.message || "";
 }
 
 function toggleCalibration(side) {
@@ -1144,6 +801,7 @@ function toggleCalibration(side) {
     state.active = true;
     state.completed = false;
     state.points = [];
+    state.result = null;
     btn.textContent = "Arrêter & afficher le résultat";
     resultEl.textContent = "Calibration en cours, faites le tour complet du stick...";
   } else {
@@ -1151,22 +809,21 @@ function toggleCalibration(side) {
     btn.textContent = "Tester l'amplitude du stick";
     if (state.points.length < 5) {
       state.completed = false;
+      state.result = null;
       resultEl.textContent = "Pas assez de données, réessayez.";
       renderGuide();
       return;
     }
-    state.completed = true;
-    resultEl.textContent = analyzeRange(state.points);
+    state.result = analyzeStickRange(state.points);
+    state.completed = state.result.state !== "incomplete";
+    resultEl.textContent = state.result.message;
   }
   renderGuide();
 }
 setupCalibration("left", "leftCalibBtn", "leftCalibResult", "leftCalibReset");
 setupCalibration("right", "rightCalibBtn", "rightCalibResult", "rightCalibReset");
 
-const neutralDrift = {
-  left: new NeutralDriftTracker(),
-  right: new NeutralDriftTracker(),
-};
+
 const neutralResultEls = {
   left: document.getElementById("leftNeutralResult"),
   right: document.getElementById("rightNeutralResult"),
@@ -1174,7 +831,7 @@ const neutralResultEls = {
 const neutralCaptureStatus = document.getElementById("neutralCaptureStatus");
 const measureNeutralBtn = document.getElementById("measureNeutralBtn");
 const NEUTRAL_CAPTURE_DURATION_MS = 3000;
-let neutralCapture = null;
+
 
 function neutralDriftStatus(offset) {
   if (!offset.measured) return { key: "na", label: "Point neutre : non testé" };
@@ -1199,8 +856,8 @@ function renderNeutralDrift(side) {
 function finishNeutralCapture() {
   const left = neutralDrift.left.getOffset();
   const right = neutralDrift.right.getOffset();
-  const invalid = neutralCapture.maxFrameGapMs > 100 || !left.measured || !right.measured;
-  neutralCapture = null;
+  const invalid = diagnosticSession.neutralCapture.maxFrameGapMs > 100 || !left.measured || !right.measured;
+  diagnosticSession.neutralCapture = null;
   measureNeutralBtn.disabled = false;
   guideContextAction.disabled = false;
   measureNeutralBtn.textContent = "Mesurer le point neutre";
@@ -1220,11 +877,11 @@ function finishNeutralCapture() {
 }
 
 function updateNeutralCapture(lx, ly, rx, ry, now, frameGapMs) {
-  if (!neutralCapture) return;
-  neutralCapture.maxFrameGapMs = Math.max(neutralCapture.maxFrameGapMs, frameGapMs);
+  if (!diagnosticSession.neutralCapture) return;
+  diagnosticSession.neutralCapture.maxFrameGapMs = Math.max(diagnosticSession.neutralCapture.maxFrameGapMs, frameGapMs);
   neutralDrift.left.update(lx, ly, now);
   neutralDrift.right.update(rx, ry, now);
-  const remainingMs = Math.max(0, neutralCapture.endAt - now);
+  const remainingMs = Math.max(0, diagnosticSession.neutralCapture.endAt - now);
   const remainingSeconds = (remainingMs / 1000).toFixed(1);
   neutralCaptureStatus.textContent = `Mesure en cours : ne touchez pas à la manette pendant encore ${remainingSeconds} s.`;
   neutralCaptureStatus.dataset.status = "active";
@@ -1235,12 +892,12 @@ function updateNeutralCapture(lx, ly, rx, ry, now, frameGapMs) {
 }
 
 function startNeutralCapture() {
-  if (!getSelectedGamepad() || neutralCapture) return;
+  if (!getSelectedGamepad() || diagnosticSession.neutralCapture) return;
   skippedGuideSteps.delete("sticks");
   neutralDrift.left.reset();
   neutralDrift.right.reset();
   const now = performance.now();
-  neutralCapture = { endAt: now + NEUTRAL_CAPTURE_DURATION_MS, maxFrameGapMs: 0 };
+  diagnosticSession.neutralCapture = { endAt: now + NEUTRAL_CAPTURE_DURATION_MS, maxFrameGapMs: 0 };
   measureNeutralBtn.disabled = true;
   guideContextAction.disabled = true;
   neutralCaptureStatus.textContent = "Mesure en cours : ne touchez plus à la manette.";
@@ -1250,10 +907,7 @@ function startNeutralCapture() {
 
 measureNeutralBtn.addEventListener("click", startNeutralCapture);
 
-const triggerStability = {
-  lt: new TriggerStabilityTracker(),
-  rt: new TriggerStabilityTracker(),
-};
+
 const triggerStabilityResultEls = {
   lt: document.getElementById("ltStabilityResult"),
   rt: document.getElementById("rtStabilityResult"),
@@ -1328,7 +982,6 @@ const mashEstimateEl = document.getElementById("mashEstimate");
 const mashPanelEl = mashOverlay.querySelector(".mash-panel");
 
 let mashTest = null;
-let lastMashResults = null;
 let mashReturnFocus = null;
 
 function showMashScreen(screen) {
@@ -1457,8 +1110,8 @@ mashDurationSelect.addEventListener("change", updateMashEstimate);
 
 openMashTestBtn.addEventListener("click", () => {
   mashReturnFocus = document.activeElement;
-  if (lastMashResults) {
-    renderMashSummaryTable(lastMashResults);
+  if (diagnosticSession.mashResults) {
+    renderMashSummaryTable(diagnosticSession.mashResults);
     showMashScreen("summary");
   } else {
     openMashSetup();
@@ -1492,7 +1145,7 @@ mashOverlay.addEventListener("keydown", (event) => {
 document.getElementById("mashCancelSetupBtn").addEventListener("click", closeMashOverlay);
 
 document.getElementById("mashRetestBtn").addEventListener("click", () => {
-  lastMashResults = null;
+  diagnosticSession.mashResults = null;
   renderGuide();
   openMashSetup();
 });
@@ -1516,7 +1169,7 @@ document.getElementById("mashCloseBtn").addEventListener("click", closeMashOverl
 
 const pressLog = document.getElementById("pressLog");
 const PRESS_LOG_LIMIT = 10;
-let lastLoggedPressAt = null;
+
 
 function logPress(label, { value, eventTime, chatterDelayMs = null }) {
   const entry = document.createElement("div");
@@ -1526,8 +1179,8 @@ function logPress(label, { value, eventTime, chatterDelayMs = null }) {
   const valueEl = document.createElement("span");
   const intervalEl = document.createElement("span");
   const statusEl = document.createElement("span");
-  const intervalMs = lastLoggedPressAt == null ? null : eventTime - lastLoggedPressAt;
-  lastLoggedPressAt = eventTime;
+  const intervalMs = diagnosticSession.lastLoggedPressAt == null ? null : eventTime - diagnosticSession.lastLoggedPressAt;
+  diagnosticSession.lastLoggedPressAt = eventTime;
 
   entry.className = "press-log-entry";
   timeEl.className = "press-log-time";
@@ -1550,37 +1203,21 @@ function logPress(label, { value, eventTime, chatterDelayMs = null }) {
   while (pressLog.children.length > PRESS_LOG_LIMIT) pressLog.removeChild(pressLog.lastChild);
 }
 
-let prevButtonStates = [];
-let lastReleaseTimes = [];
 let lastPadCount = 0;
-let lastPadId = null;
 
-let chatterTotal = 0;
-const chatterByButton = new Map();
-const pressCountByButton = new Map();
+
 const chatterCountEl = document.getElementById("chatterCount");
 
 function buildDiagnosticReport() {
-  const pad = getSelectedGamepad();
-  return {
-    generatedAt: new Date().toISOString(),
-    gamepad: pad
-      ? {
-          id: pad.id,
-          index: pad.index,
-          controllerType: detectControllerType(pad.id),
-          mapping: pad.mapping || "non standard",
-          buttonCount: pad.buttons.length,
-          axisCount: pad.axes.length,
-        }
-      : null,
+  return createDiagnosticReport({
+    pad: getSelectedGamepad(),
     deadzones: {
       left: { inner: Number(sliders.left.inner.value), outer: Number(sliders.left.outer.value) },
       right: { inner: Number(sliders.right.inner.value), outer: Number(sliders.right.outer.value) },
     },
     calibration: {
-      left: document.getElementById("leftCalibResult").textContent || null,
-      right: document.getElementById("rightCalibResult").textContent || null,
+      left: calibration.left.result,
+      right: calibration.right.result,
     },
     neutralDrift: {
       left: neutralDrift.left.getOffset(),
@@ -1590,665 +1227,15 @@ function buildDiagnosticReport() {
       lt: triggerStability.lt.getResult(),
       rt: triggerStability.rt.getResult(),
     },
-    vibration: {
-      supported: Boolean(pad?.vibrationActuator),
-      commands: { ...vibrationCommands },
-    },
-    guide: {
-      skippedSteps: [...skippedGuideSteps],
-    },
-    chatterEventsTotal: chatterTotal,
-    totalPressCount: [...pressCountByButton.values()].reduce((sum, n) => sum + n, 0),
-    chatterByButton: [...chatterByButton.entries()]
-      .map(([label, count]) => ({ label, count, pressCount: pressCountByButton.get(label) || count }))
-      .sort((a, b) => b.count - a.count),
-    mashTest: lastMashResults
-      ? lastMashResults.map((r) => ({
-          label: r.label,
-          pressCount: r.pressCount,
-          pressesPerSecond: Number(r.pressesPerSecond.toFixed(1)),
-          chatterCount: r.chatterCount,
-          reliable: r.reliable,
-          maxStallGapMs: r.maxStallGapMs,
-        }))
-      : null,
-  };
-}
-
-// Le seuil "bad" (35%) est environ le double du seuil de détection (18% dans analyzeRange):
-// une asymétrie franchement au-dessus du bruit de mesure plutôt qu'un cas limite.
-const ASYMMETRY_BAD_THRESHOLD_PERCENT = 35;
-
-function asymmetryPercent(calibrationText) {
-  if (typeof calibrationText !== "string") return null;
-  const match = calibrationText.match(/^Asymétrie détectée \((\d+)%\)/);
-  return match ? Number(match[1]) : null;
-}
-
-function computeDiagnosticVerdict(report) {
-  const items = [];
-
-  if (report.guide?.skippedSteps?.length) {
-    const labels = report.guide.skippedSteps.map((id) => GUIDE_STEPS.find((step) => step.id === id)?.label || id);
-    items.push({
-      status: "neutral",
-      title: "Étapes passées",
-      text: `${labels.join(", ")} : ces étapes ont été passées volontairement et restent non testées dans cette synthèse.`,
-    });
-  }
-
-  items.push(buildConnectionVerdict(report.gamepad));
-
-  const leftPercent = asymmetryPercent(report.calibration.left);
-  const rightPercent = asymmetryPercent(report.calibration.right);
-  if (!report.calibration.left && !report.calibration.right) {
-    items.push({ status: "neutral", title: "Sticks", text: "Aucun test d'amplitude effectué. La couverture et l'asymétrie des sticks ne sont pas encore vérifiées." });
-  } else if (leftPercent != null || rightPercent != null) {
-    const sides = [leftPercent != null ? "gauche" : null, rightPercent != null ? "droit" : null].filter(Boolean).join(" et ");
-    const worstPercent = Math.max(leftPercent ?? 0, rightPercent ?? 0);
-    const status = worstPercent >= ASYMMETRY_BAD_THRESHOLD_PERCENT ? "bad" : "warn";
-    const severity = status === "bad" ? "marquée" : "modérée";
-    items.push({
-      status,
-      title: "Sticks",
-      text: `Asymétrie ${severity} observée sur le stick ${sides} (${worstPercent} %). Recommencez le test pour vérifier que le résultat est reproductible.`,
-    });
-  } else {
-    items.push({ status: "ok", title: "Sticks", text: "Aucune asymétrie notable observée pendant les tests d'amplitude réalisés." });
-  }
-
-  const { left: leftNeutral, right: rightNeutral } = report.neutralDrift;
-  if (!leftNeutral.measured && !rightNeutral.measured) {
-    items.push({ status: "neutral", title: "Point neutre des sticks", text: "Pas encore mesuré, laissez les sticks au repos quelques secondes sans y toucher." });
-  } else {
-    const driftedSides = [
-      leftNeutral.measured && leftNeutral.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD ? "gauche" : null,
-      rightNeutral.measured && rightNeutral.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD ? "droit" : null,
-    ].filter(Boolean);
-    if (driftedSides.length === 0) {
-      items.push({ status: "ok", title: "Point neutre des sticks", text: "Aucun décalage notable du point de repos détecté." });
-    } else {
-      const worstMagnitude = Math.max(
-        leftNeutral.measured ? leftNeutral.magnitude : 0,
-        rightNeutral.measured ? rightNeutral.magnitude : 0
-      );
-      const status = worstMagnitude > NEUTRAL_DRIFT_BAD_THRESHOLD ? "bad" : "warn";
-      const magnitudePercent = Math.round(worstMagnitude * 100);
-      items.push({
-        status,
-        title: "Point neutre des sticks",
-        text:
-          status === "bad"
-            ? `Décalage net du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), au-delà de la zone morte habituelle : signe probable d'un drift actif.`
-            : `Décalage du point de repos détecté sur le stick ${driftedSides.join(" et ")} (${magnitudePercent}% de l'amplitude), à confirmer avec une seconde mesure même si le test d'amplitude ne montre pas d'asymétrie.`,
-      });
-    }
-  }
-
-  const { lt: ltStability, rt: rtStability } = report.triggerStability;
-  if (!ltStability.measured && !rtStability.measured) {
-    items.push({ status: "neutral", title: "Gâchettes", text: "Stabilité pas encore mesurée, maintenez chaque gâchette à mi-course quelques secondes." });
-  } else {
-    const ltGrade = triggerStabilityGrade(ltStability);
-    const rtGrade = triggerStabilityGrade(rtStability);
-    const unstableSides = [
-      ltGrade.key !== "na" && ltGrade.key !== "excellent" ? "LT" : null,
-      rtGrade.key !== "na" && rtGrade.key !== "excellent" ? "RT" : null,
-    ].filter(Boolean);
-    if (unstableSides.length === 0) {
-      items.push({ status: "ok", title: "Gâchettes", text: "Signal régulier pendant le maintien manuel des gâchettes. La mesure reste dépendante de la stabilité du geste." });
-    } else {
-      const worstGrade = [ltGrade, rtGrade].some((g) => g.key === "poor") ? "poor" : "fair";
-      const anyIsolated = (ltGrade.isolated || rtGrade.isolated) && worstGrade !== "poor";
-      const worstRange = Math.max(
-        ltStability.measured ? ltStability.range : 0,
-        rtStability.measured ? rtStability.range : 0
-      );
-      const status = worstGrade === "poor" ? "bad" : "warn";
-      const rangePercent = Math.round(worstRange * 100);
-      items.push({
-        status,
-        title: "Gâchettes",
-        text:
-          worstGrade === "poor"
-            ? `Signal instable détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, sauts répétés). Recommencez le test avant de suspecter un défaut du capteur.`
-            : anyIsolated
-              ? `Écart isolé détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu, saut unique): probablement un accident de mesure ponctuel plutôt qu'un vrai défaut, retestez pour confirmer.`
-              : `Léger bruit détecté sur ${unstableSides.join(" et ")} (écart de ${rangePercent}% à palier tenu), à surveiller mais pas encore franchement anormal.`,
-      });
-    }
-  }
-
-  const vibration = report.vibration || { supported: false, commands: {} };
-  if (!vibration.supported) {
-    items.push({
-      status: "ok",
-      label: "Non applicable",
-      title: "Vibrations",
-      text: "La commande de vibration n'est pas exposée par cette manette ou ce navigateur ; cette vérification ne bloque pas le diagnostic.",
-    });
-  } else if (vibration.commands.strong !== "complete" || vibration.commands.weak !== "complete") {
-    const failed = [vibration.commands.strong, vibration.commands.weak].includes("error");
-    items.push({
-      status: "neutral",
-      title: "Vibrations",
-      text: failed
-        ? "Au moins une commande de vibration a échoué ou été interrompue. Réessayez en gardant l'onglet visible."
-        : "Les commandes de vibration n'ont pas encore été envoyées aux deux moteurs.",
-    });
-  } else {
-    items.push({
-      status: "ok",
-      label: "Commandes envoyées",
-      title: "Vibrations",
-      text: "Les commandes à 100 % pendant 600 ms ont été envoyées aux deux moteurs. L'application ne peut pas confirmer la force réellement produite.",
-    });
-  }
-
-  if (report.totalPressCount < 20) {
-    items.push({ status: "neutral", title: "Doubles déclenchements", text: "Pas assez d'appuis observés pour conclure. Lancez le diagnostic des boutons." });
-  } else if (report.chatterEventsTotal === 0) {
-    items.push({ status: "ok", title: "Observation libre des boutons", text: "Aucun double déclenchement involontaire observé pendant les appuis libres." });
-  } else {
-    // Comme pour le mashing: un chatter isolé sur des centaines d'appuis en usage normal
-    // n'a rien à voir avec un chatter récurrent. On juge sur le taux global plutôt que sur
-    // le compte brut, avec le même barème que le diagnostic des boutons pour rester cohérent.
-    const worst = report.chatterByButton[0];
-    const rate = worst ? Math.round((worst.count / worst.pressCount) * 100) : 0;
-    const detail = worst ? ` Bouton le plus touché: ${worst.label} (${worst.count} fois sur ${worst.pressCount} appuis, soit ${rate}%).` : "";
-    const grade = gradeForChatter(report.chatterEventsTotal, report.totalPressCount);
-    const globalRate = Math.round(chatterRate(report.chatterEventsTotal, report.totalPressCount) * 100);
-    let text;
-    if (grade.key === "na") {
-      text = `${report.chatterEventsTotal} événement(s) détecté(s), pas assez d'appuis en usage normal pour juger du taux réel, à confirmer avec le diagnostic des boutons.${detail}`;
-    } else {
-      text = `${report.chatterEventsTotal} événement(s) détecté(s) sur ${report.totalPressCount} appuis (${globalRate}%), fiabilité ${reliabilityAdjective(grade)}.${detail}`;
-    }
-    items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Observation libre des boutons", text });
-  }
-
-  if (!report.mashTest) {
-    items.push({
-      status: "neutral",
-      title: "Diagnostic des boutons",
-      text: "Aucun test guidé effectué. Lancez le diagnostic des boutons pour vérifier les doubles déclenchements bouton par bouton.",
-    });
-  } else {
-    const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
-    const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
-    const grade = gradeForChatter(totalChatter, totalPressCount);
-
-    let text;
-    if (grade.key === "na") {
-      text = "Pas assez d'appuis enregistrés pendant le diagnostic pour conclure sur la fiabilité des boutons.";
-    } else if (totalChatter === 0) {
-      text = `Test effectué sur ${report.mashTest.length} bouton(s), aucun double déclenchement observé, fiabilité ${reliabilityAdjective(grade)}.`;
-    } else {
-      const worst = [...report.mashTest].sort((a, b) => b.chatterCount - a.chatterCount)[0];
-      text = `Fiabilité ${reliabilityAdjective(grade)} (${totalChatter} double(s) déclenchement(s) sur ${totalPressCount} appuis). Bouton le plus touché : ${worst.label} (${worst.chatterCount} fois).`;
-    }
-    items.push({ status: PDF_GRADE_STATUS[grade.key], title: "Diagnostic des boutons", text });
-  }
-
-  return items;
-}
-
-const PDF_MARGIN = 15;
-const PDF_PAGE_WIDTH = 210;
-const PDF_CONTENT_WIDTH = PDF_PAGE_WIDTH - PDF_MARGIN * 2;
-const PDF_DARK = [30, 32, 40];
-const PDF_MUTED = [110, 110, 110];
-const PDF_LABEL = [85, 87, 95];
-const PDF_HAIRLINE = [188, 191, 199];
-const PDF_GRADE_STATUS = { excellent: "ok", good: "ok", fair: "warn", poor: "bad", na: "neutral" };
-const PDF_STATUS_COLORS = {
-  ok: [30, 150, 90],
-  warn: [200, 140, 0],
-  bad: [200, 50, 50],
-  neutral: [140, 140, 140],
-};
-const PDF_STATUS_LABELS = { ok: "OK", warn: "ATTENTION", bad: "PROBLÈME", neutral: "N/A" };
-// Glyphes ASCII uniquement: les polices de base de jsPDF (WinAnsi) n'incluent pas ✓/✕.
-const PDF_STATUS_GLYPHS = { ok: "+", warn: "!", bad: "x", neutral: "-" };
-
-function hexToRgb(hex) {
-  const value = hex.replace("#", "");
-  return [parseInt(value.slice(0, 2), 16), parseInt(value.slice(2, 4), 16), parseInt(value.slice(4, 6), 16)];
-}
-
-// Les couleurs de thème sont des néons saturés (ex: cyan, ambre) qui ne garantissent pas
-// un contraste correct avec du texte blanc fixe: on choisit la couleur de texte selon la
-// luminance perçue plutôt que de supposer que "couleur vive = texte blanc lisible".
-function textColorForBackground([r, g, b]) {
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? [20, 20, 25] : [255, 255, 255];
-}
-
-function slugify(text) {
-  return text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .toLowerCase();
-}
-
-function pdfEnsureSpace(doc, y, needed) {
-  if (y + needed > 278) {
-    doc.addPage();
-    return 18;
-  }
-  return y;
-}
-
-// En-tête de section "discret": une fine barre d'accent + libellé tracké, plutôt qu'un
-// bandeau plein qui donnait le même poids visuel à chaque section du rapport.
-function pdfPanelHeader(doc, title, y, accent) {
-  y = pdfEnsureSpace(doc, y, 14);
-  doc.setFillColor(...accent);
-  doc.rect(PDF_MARGIN, y, 1.2, 6, "F");
-  doc.setTextColor(...PDF_DARK);
-  doc.setFont(undefined, "bold");
-  doc.setFontSize(10.5);
-  doc.text(title.toUpperCase(), PDF_MARGIN + 4, y + 4.6, { charSpace: 0.3 });
-  doc.setFont(undefined, "normal");
-  return y + 6 + 6;
-}
-
-function pdfDivider(doc, y) {
-  doc.setDrawColor(...PDF_HAIRLINE);
-  doc.setLineWidth(0.2);
-  doc.line(PDF_MARGIN, y, PDF_PAGE_WIDTH - PDF_MARGIN, y);
-  return y + 7;
-}
-
-// Clin d'œil discret à l'objet du rapport: un badge carré arrondi façon bouton de
-// manette, plutôt qu'une simple puce de couleur, pour marquer chaque verdict.
-function pdfStatusChip(doc, status, x, y) {
-  doc.setFillColor(...PDF_STATUS_COLORS[status]);
-  doc.roundedRect(x, y, 4.2, 4.2, 1, 1, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont(undefined, "bold");
-  doc.setFontSize(7);
-  doc.text(PDF_STATUS_GLYPHS[status], x + 2.1, y + 3, { align: "center" });
-}
-
-function pdfVerdictRow(doc, item, y) {
-  const lines = doc.splitTextToSize(item.text, PDF_CONTENT_WIDTH - 10);
-  y = pdfEnsureSpace(doc, y, lines.length * 4.3 + 7);
-
-  pdfStatusChip(doc, item.status, PDF_MARGIN, y);
-
-  doc.setFont(undefined, "bold");
-  doc.setFontSize(9.5);
-  doc.setTextColor(...PDF_DARK);
-  doc.text(item.title, PDF_MARGIN + 7, y + 3.2);
-  const titleWidth = doc.getTextWidth(item.title);
-  doc.setFont(undefined, "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(...PDF_STATUS_COLORS[item.status]);
-  doc.text(item.label?.toUpperCase() || PDF_STATUS_LABELS[item.status], PDF_MARGIN + 7 + titleWidth + 3, y + 3.2);
-  y += 5.5;
-
-  doc.setFontSize(9);
-  doc.setFont(undefined, "normal");
-  doc.setTextColor(...PDF_DARK);
-  doc.text(lines, PDF_MARGIN + 7, y);
-  y += lines.length * 4.3 + 4;
-  return y;
-}
-
-// Carte "instrument": grande valeur en police mono (comme les lectures brutes affichées
-// à l'écran dans l'app) + libellé tracké, pour une lecture immédiate sans avoir à lire
-// de phrases. Une fine bande de couleur en haut porte le statut (ok/attention/problème).
-function pdfKpiCard(doc, x, y, w, h, { label, value, status }) {
-  doc.setDrawColor(...PDF_HAIRLINE);
-  doc.setLineWidth(0.45);
-  doc.roundedRect(x, y, w, h, 1.5, 1.5, "S");
-  doc.setFillColor(...PDF_STATUS_COLORS[status]);
-  doc.rect(x + 0.6, y, w - 1.2, 1.3, "F");
-
-  doc.setFont("courier", "bold");
-  doc.setFontSize(12.5);
-  doc.setTextColor(...PDF_DARK);
-  doc.text(value, x + w / 2, y + h / 2 + 0.5, { align: "center" });
-
-  doc.setFont(undefined, "bold");
-  doc.setFontSize(7.2);
-  doc.setTextColor(...PDF_LABEL);
-  doc.text(label.toUpperCase(), x + w / 2, y + h - 3.2, { align: "center", charSpace: 0.15 });
-}
-
-function buildDiagnosticPdf(report, jsPDF, autoTable) {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-
-  // Couleur d'accent alignée sur le thème actif au moment de l'export, pour que le rapport
-  // PDF reste visuellement rattaché à l'application plutôt que d'imposer une charte fixe.
-  // Réservée à la couverture, aux libellés de section et aux en-têtes de tableau: les
-  // statuts (ok/attention/problème) restent des couleurs sémantiques fixes, jamais teintées.
-  const activeTheme = THEMES[getTheme()] || THEMES.cyan;
-  const PDF_ACCENT = hexToRgb(activeTheme.accent);
-  const PDF_ACCENT_TEXT = textColorForBackground(PDF_ACCENT);
-
-  const titleText = report.gamepad ? `Rapport de diagnostic — ${report.gamepad.id}` : "Rapport de diagnostic manette";
-  doc.setFont(undefined, "bold");
-  doc.setFontSize(17);
-  const titleLines = doc.splitTextToSize(titleText, PDF_CONTENT_WIDTH);
-  const coverHeight = 12 + titleLines.length * 7 + 9;
-  doc.setFillColor(...PDF_ACCENT);
-  doc.rect(0, 0, PDF_PAGE_WIDTH, coverHeight, "F");
-  doc.setTextColor(...PDF_ACCENT_TEXT);
-  doc.text(titleLines, PDF_MARGIN, 11);
-  doc.setFont(undefined, "normal");
-  doc.setFontSize(9.5);
-  doc.text(`Généré le ${new Date(report.generatedAt).toLocaleString("fr-FR")}`, PDF_MARGIN, 11 + titleLines.length * 7 + 5);
-  let y = coverHeight + 10;
-
-  const verdictItems = computeDiagnosticVerdict(report);
-
-  const chatterValue = String(report.chatterEventsTotal);
-  const chatterStatus = verdictItems.find((i) => i.title === "Observation libre des boutons" || i.title === "Doubles déclenchements")?.status ?? "neutral";
-
-  let mashValue = "N/A";
-  let mashStatus = "neutral";
-  if (report.mashTest && report.mashTest.length) {
-    const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
-    const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
-    const overallGrade = gradeForChatter(totalChatter, totalPressCount);
-    mashValue = reliabilityAdjective(overallGrade, { capitalized: true });
-    mashStatus = PDF_GRADE_STATUS[overallGrade.key];
-  }
-
-  const hasBadVerdict = verdictItems.some((i) => i.status === "bad");
-  const hasWarnVerdict = verdictItems.some((i) => i.status === "warn");
-  const hasNeutralVerdict = verdictItems.some((i) => i.status === "neutral");
-  const globalStatus = hasBadVerdict ? "bad" : hasWarnVerdict ? "warn" : hasNeutralVerdict ? "neutral" : "ok";
-  const globalValue = hasBadVerdict ? "Problème" : hasWarnVerdict ? "Attention" : hasNeutralVerdict ? "Incomplet" : "Cohérent";
-  const measuredItems = verdictItems.filter((item) => item.status !== "neutral").length;
-
-  y = pdfEnsureSpace(doc, y, 26);
-  const kpis = [
-    { label: "Mesures disponibles", value: `${measuredItems}/${verdictItems.length}`, status: hasNeutralVerdict ? "neutral" : "ok" },
-    { label: "Doubles déclenchements", value: chatterValue, status: chatterStatus },
-    { label: "Fiabilité boutons", value: mashValue, status: mashStatus },
-    { label: "Synthèse", value: globalValue, status: globalStatus },
-  ];
-  const kpiGap = 4;
-  const kpiWidth = (PDF_CONTENT_WIDTH - kpiGap * (kpis.length - 1)) / kpis.length;
-  const kpiHeight = 22;
-  kpis.forEach((kpi, i) => pdfKpiCard(doc, PDF_MARGIN + i * (kpiWidth + kpiGap), y, kpiWidth, kpiHeight, kpi));
-  y += kpiHeight + 10;
-
-  y = pdfEnsureSpace(doc, y, 24);
-  y = pdfPanelHeader(doc, "Résumé du diagnostic", y, PDF_ACCENT);
-  for (const item of verdictItems) {
-    y = pdfVerdictRow(doc, item, y);
-  }
-  y = pdfDivider(doc, y + 2);
-
-  y = pdfEnsureSpace(doc, y, 36);
-  y = pdfPanelHeader(doc, "Manette & zones mortes", y, PDF_ACCENT);
-  doc.setFontSize(9.5);
-  doc.setTextColor(...PDF_DARK);
-  if (report.gamepad) {
-    doc.setFont(undefined, "bold");
-    doc.text("Nom", PDF_MARGIN + 2, y);
-    doc.setFont(undefined, "normal");
-    doc.text(report.gamepad.id, PDF_MARGIN + 18, y);
-    y += 5.5;
-    doc.setFont(undefined, "bold");
-    doc.text("Mapping", PDF_MARGIN + 2, y);
-    doc.setFont(undefined, "normal");
-    doc.text(
-      `${report.gamepad.mapping} · ${report.gamepad.buttonCount} boutons · ${report.gamepad.axisCount} axes`,
-      PDF_MARGIN + 18,
-      y
-    );
-    y += 7;
-  } else {
-    doc.text("Aucune manette connectée au moment de l'export.", PDF_MARGIN + 2, y);
-    y += 7;
-  }
-  autoTable(doc, {
-    startY: y,
-    margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-    head: [["Stick", "Zone morte intérieure", "Zone morte extérieure"]],
-    body: [
-      ["Gauche", report.deadzones.left.inner.toFixed(2), report.deadzones.left.outer.toFixed(2)],
-      ["Droit", report.deadzones.right.inner.toFixed(2), report.deadzones.right.outer.toFixed(2)],
-    ],
-    theme: "grid",
-    headStyles: { fillColor: PDF_ACCENT, textColor: PDF_ACCENT_TEXT, fontSize: 9 },
-    styles: { fontSize: 9.5, textColor: PDF_DARK },
-    columnStyles: {
-      1: { font: "courier", halign: "right" },
-      2: { font: "courier", halign: "right" },
-    },
+    vibrationCommands,
+    skippedSteps: skippedGuideSteps,
+    chatterTotal: diagnosticSession.chatterTotal,
+    pressCountByButton,
+    chatterByButton,
+    mashResults: diagnosticSession.mashResults,
   });
-  y = pdfDivider(doc, doc.lastAutoTable.finalY + 8);
-
-  y = pdfEnsureSpace(doc, y, 52);
-  y = pdfPanelHeader(doc, "Sticks — calibration & point neutre", y, PDF_ACCENT);
-  const colGap = 6;
-  const colWidth = (PDF_CONTENT_WIDTH - colGap) / 2;
-  const sides = [
-    { key: "left", label: "Gauche", x: PDF_MARGIN },
-    { key: "right", label: "Droit", x: PDF_MARGIN + colWidth + colGap },
-  ];
-  const sticksStartY = y;
-  let sticksEndY = y;
-  for (const side of sides) {
-    let cy = sticksStartY;
-    doc.setFont(undefined, "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...PDF_DARK);
-    doc.text(side.label.toUpperCase(), side.x, cy, { charSpace: 0.2 });
-    cy += 5;
-
-    doc.setFont(undefined, "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...PDF_DARK);
-    const calibText = report.calibration[side.key] || "Aucune calibration effectuée.";
-    const calibLines = doc.splitTextToSize(calibText, colWidth);
-    doc.text(calibLines, side.x, cy);
-    cy += calibLines.length * 4 + 4;
-
-    const offset = report.neutralDrift[side.key];
-    const drifted = offset.measured && offset.magnitude > NEUTRAL_DRIFT_WARN_THRESHOLD;
-    const neutralText = offset.measured
-      ? `Point neutre: ${offset.x.toFixed(3)}, ${offset.y.toFixed(3)} ${drifted ? "(décalé)" : "(centré)"}`
-      : "Point neutre: pas encore mesuré.";
-    const neutralLines = doc.splitTextToSize(neutralText, colWidth);
-    doc.setFont("courier", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...(drifted ? PDF_STATUS_COLORS.warn : PDF_MUTED));
-    doc.text(neutralLines, side.x, cy);
-    cy += neutralLines.length * 4 + 2;
-
-    sticksEndY = Math.max(sticksEndY, cy);
-  }
-  doc.setFont(undefined, "normal");
-  y = pdfDivider(doc, sticksEndY + 3);
-
-  y = pdfEnsureSpace(doc, y, 36);
-  y = pdfPanelHeader(doc, "Gâchettes — stabilité du signal", y, PDF_ACCENT);
-  const triggerSides = [
-    { key: "lt", label: "LT / L2", x: PDF_MARGIN },
-    { key: "rt", label: "RT / R2", x: PDF_MARGIN + colWidth + colGap },
-  ];
-  const triggersStartY = y;
-  let triggersEndY = y;
-  for (const side of triggerSides) {
-    let cy = triggersStartY;
-    doc.setFont(undefined, "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...PDF_DARK);
-    doc.text(side.label.toUpperCase(), side.x, cy, { charSpace: 0.2 });
-    cy += 5;
-
-    const result = report.triggerStability[side.key];
-    const grade = triggerStabilityGrade(result);
-    const qualifier =
-      grade.key === "poor" ? "(instable)" : grade.key === "fair" ? (grade.isolated ? "(écart isolé, à confirmer)" : "(léger bruit)") : "(lisse)";
-    const stabilityText = result.measured
-      ? `Écart à palier tenu: ${(result.range * 100).toFixed(1)}% (${result.stepCount} saut(s)) ${qualifier}`
-      : "Pas encore mesuré (maintenez à mi-course).";
-    const stabilityLines = doc.splitTextToSize(stabilityText, colWidth);
-    doc.setFont("courier", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...(grade.key === "poor" ? PDF_STATUS_COLORS.bad : grade.key === "fair" ? PDF_STATUS_COLORS.warn : PDF_MUTED));
-    doc.text(stabilityLines, side.x, cy);
-    cy += stabilityLines.length * 4 + 2;
-
-    triggersEndY = Math.max(triggersEndY, cy);
-  }
-  doc.setFont(undefined, "normal");
-  const vibrationText = !report.vibration?.supported
-    ? "Vibrations : non applicables avec cette manette ou ce navigateur."
-    : report.vibration.commands.strong === "complete" && report.vibration.commands.weak === "complete"
-      ? "Commandes de vibration envoyées aux deux moteurs à 100 % pendant 600 ms. La force réellement produite n'est pas mesurable par l'application."
-      : "Commandes de vibration incomplètes ou interrompues ; aucune conclusion matérielle n'est possible.";
-  doc.setFontSize(8.5);
-  doc.setTextColor(...PDF_MUTED);
-  const vibrationLines = doc.splitTextToSize(vibrationText, PDF_CONTENT_WIDTH - 4);
-  doc.text(vibrationLines, PDF_MARGIN + 2, triggersEndY + 3);
-  y = pdfDivider(doc, triggersEndY + 4 + vibrationLines.length * 4);
-
-  y = pdfEnsureSpace(doc, y, 32);
-  y = pdfPanelHeader(doc, "Doubles déclenchements observés", y, PDF_ACCENT);
-  doc.setFontSize(9.5);
-  doc.setTextColor(...PDF_DARK);
-  doc.setFont(undefined, "bold");
-  doc.text("Événements détectés", PDF_MARGIN + 2, y);
-  doc.setFont("courier", "normal");
-  doc.text(`${report.chatterEventsTotal} événement(s)`, PDF_MARGIN + 40, y);
-  doc.setFont(undefined, "normal");
-  y += 8;
-
-  if (report.chatterByButton.length > 0) {
-    y = pdfEnsureSpace(doc, y, 16);
-    autoTable(doc, {
-      startY: y,
-      margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-      head: [["Bouton", "Appuis", "Chatter", "Taux"]],
-      body: report.chatterByButton.map((b) => [
-        b.label,
-        String(b.pressCount),
-        String(b.count),
-        `${Math.round((b.count / b.pressCount) * 100)}%`,
-      ]),
-      theme: "grid",
-      headStyles: { fillColor: PDF_DARK, textColor: 255, fontSize: 9 },
-      styles: { fontSize: 9, textColor: PDF_DARK },
-      columnStyles: {
-        1: { font: "courier", halign: "right" },
-        2: { font: "courier", halign: "right" },
-        3: { font: "courier", halign: "right" },
-      },
-    });
-    y = doc.lastAutoTable.finalY + 8;
-  } else {
-    y += 2;
-  }
-  y = pdfDivider(doc, y);
-
-  y = pdfEnsureSpace(doc, y, 30);
-  y = pdfPanelHeader(doc, "Diagnostic guidé des boutons", y, PDF_ACCENT);
-  if (report.mashTest && report.mashTest.length) {
-    const totalPressCount = report.mashTest.reduce((sum, r) => sum + r.pressCount, 0);
-    const totalChatter = report.mashTest.reduce((sum, r) => sum + r.chatterCount, 0);
-    const overallGrade = gradeForChatter(totalChatter, totalPressCount);
-    doc.setFontSize(9.5);
-    doc.setTextColor(...PDF_STATUS_COLORS[PDF_GRADE_STATUS[overallGrade.key]]);
-    doc.setFont(undefined, "bold");
-    doc.text(`Fiabilité globale : ${reliabilityAdjective(overallGrade, { capitalized: true })} (${totalChatter} double(s) déclenchement(s) sur ${totalPressCount} appuis)`, PDF_MARGIN + 2, y);
-    doc.setFont(undefined, "normal");
-    y += 7;
-    const mashGrades = report.mashTest.map((r) => gradeForChatter(r.chatterCount, r.pressCount));
-    const unreliableLabels = report.mashTest.filter((r) => r.reliable === false).map((r) => r.label);
-    autoTable(doc, {
-      startY: y,
-      margin: { left: PDF_MARGIN, right: PDF_MARGIN },
-      head: [["Bouton", "Appuis", "Appuis/s", "Doubles", "Fiabilité"]],
-      body: report.mashTest.map((r, i) => [
-        r.label,
-        String(r.pressCount),
-        r.pressesPerSecond.toFixed(1),
-        String(r.chatterCount),
-        r.reliable === false ? `${mashGrades[i].label} (*)` : mashGrades[i].label,
-      ]),
-      theme: "grid",
-      headStyles: { fillColor: PDF_DARK, textColor: 255, fontSize: 9 },
-      styles: { fontSize: 9, textColor: PDF_DARK },
-      columnStyles: {
-        1: { font: "courier", halign: "right" },
-        2: { font: "courier", halign: "right" },
-        3: { font: "courier", halign: "right" },
-      },
-      didParseCell: (data) => {
-        if (data.section === "body" && data.column.index === 4) {
-          data.cell.styles.textColor = PDF_STATUS_COLORS[PDF_GRADE_STATUS[mashGrades[data.row.index].key]];
-          data.cell.styles.fontStyle = "bold";
-        }
-      },
-    });
-    y = doc.lastAutoTable.finalY + (unreliableLabels.length ? 5 : 10);
-    if (unreliableLabels.length) {
-      doc.setFontSize(8);
-      doc.setTextColor(...PDF_STATUS_COLORS.warn);
-      const warnLines = doc.splitTextToSize(
-        `(*) Ralentissement du navigateur détecté pendant le test sur: ${unreliableLabels.join(", ")}, mesure peu fiable pour ce(s) bouton(s), à retester.`,
-        PDF_CONTENT_WIDTH - 4,
-      );
-      doc.text(warnLines, PDF_MARGIN + 2, y);
-      y += warnLines.length * 4 + 6;
-      doc.setTextColor(...PDF_DARK);
-    }
-    const verdict = buildMashVerdict(report.mashTest);
-    doc.setFontSize(9);
-    doc.setFont(undefined, "bold");
-    doc.setTextColor(...PDF_STATUS_COLORS[verdict.tone]);
-    const verdictLines = doc.splitTextToSize(verdict.text, PDF_CONTENT_WIDTH - 4);
-    doc.text(verdictLines, PDF_MARGIN + 2, y);
-    doc.setFont(undefined, "normal");
-    doc.setTextColor(...PDF_DARK);
-    y += verdictLines.length * 4.5 + 8;
-  } else {
-    doc.setFontSize(9.5);
-    doc.setTextColor(...PDF_DARK);
-    const lines = doc.splitTextToSize(
-      "Aucun diagnostic guidé des boutons effectué avant l'export. Lancez ce test depuis l'application pour fiabiliser cette partie du rapport.",
-      PDF_CONTENT_WIDTH - 4,
-    );
-    doc.text(lines, PDF_MARGIN + 2, y);
-    y += lines.length * 5 + 6;
-  }
-  y = pdfDivider(doc, y);
-
-  y = pdfEnsureSpace(doc, y, 28);
-  y = pdfPanelHeader(doc, "Limites de ce diagnostic", y, PDF_MUTED);
-  doc.setFontSize(8.5);
-  doc.setTextColor(...PDF_MUTED);
-  const limitsLines = doc.splitTextToSize(
-    "Ce rapport dépend du navigateur et du système utilisés (fréquence de lecture de la manette, throttling d'un onglet en arrière-plan, pilote...). " +
-      "Il donne une bonne indication de l'état de la manette mais ne remplace pas un diagnostic matériel certifié. " +
-      "Un résultat isolé sur un seul bouton n'implique pas forcément un défaut, retestez avant de conclure, surtout si le reste du diagnostic est bon.",
-    PDF_CONTENT_WIDTH - 4,
-  );
-  doc.text(limitsLines, PDF_MARGIN + 2, y);
-
-  const totalPages = doc.getNumberOfPages();
-  for (let page = 1; page <= totalPages; page++) {
-    doc.setPage(page);
-    doc.setFontSize(8);
-    doc.setFont(undefined, "normal");
-    doc.setTextColor(...PDF_MUTED);
-    doc.text("Gamepad Tester", PDF_MARGIN, 291);
-    doc.text(`Page ${page} / ${totalPages}`, PDF_PAGE_WIDTH - PDF_MARGIN, 291, { align: "right" });
-  }
-
-  return doc;
 }
+
 
 async function exportDiagnosticReport() {
   if (pdfExportInProgress) return;
@@ -2283,35 +1270,20 @@ async function exportDiagnosticReport() {
 
 exportReportBtn.addEventListener("click", exportDiagnosticReport);
 
-document.getElementById("resetDataBtn").addEventListener("click", () => {
-  if (!window.confirm("Réinitialiser toutes les mesures collectées (sticks, gâchettes, boutons et historique) ? Cette action est irréversible.")) {
-    return;
-  }
-
-  chatterTotal = 0;
-  chatterByButton.clear();
-  pressCountByButton.clear();
+function syncDiagnosticResetUI() {
+  resetVibrationUI();
   chatterCountEl.textContent = "0";
-  prevButtonStates = [];
-  lastReleaseTimes = [];
-
   driftHistoryLeft.fill(0);
   driftHistoryRight.fill(0);
-
-  pressLog.innerHTML = "";
-  lastLoggedPressAt = null;
-
+  triggerHistoryLT.fill(0);
+  triggerHistoryRT.fill(0);
+  pressLog.replaceChildren();
   mashTest = null;
-  lastMashResults = null;
-  skippedGuideSteps.clear();
   guideStepIndex = 0;
 
-  document.getElementById("leftCalibReset").click();
-  document.getElementById("rightCalibReset").click();
+  syncCalibrationUI("left");
+  syncCalibrationUI("right");
 
-  neutralDrift.left.reset();
-  neutralDrift.right.reset();
-  neutralCapture = null;
   measureNeutralBtn.disabled = false;
   measureNeutralBtn.textContent = "Mesurer le point neutre";
   guideContextAction.disabled = false;
@@ -2320,17 +1292,20 @@ document.getElementById("resetDataBtn").addEventListener("click", () => {
   renderNeutralDrift("left");
   renderNeutralDrift("right");
 
-  triggerStability.lt.reset();
-  triggerStability.rt.reset();
   triggerGuideStates.lt = "idle";
   triggerGuideStates.rt = "idle";
-  vibrationCommands.strong = "pending";
-  vibrationCommands.weak = "pending";
   renderTriggerStability("lt", performance.now());
   renderTriggerStability("rt", performance.now());
   renderGuide();
-});
+}
 
+function resetDiagnosticData() {
+  if (!window.confirm("Réinitialiser toutes les mesures collectées (sticks, gâchettes, boutons et historique) ? Cette action est irréversible.")) return;
+  diagnosticSession.reset();
+  syncDiagnosticResetUI();
+}
+
+document.getElementById("resetDataBtn").addEventListener("click", resetDiagnosticData);
 let lastFrameTime = performance.now();
 
 function loop() {
@@ -2347,11 +1322,12 @@ function loop() {
   const pad = getSelectedGamepad();
 
   if (pad) {
+    const sessionChanged = diagnosticSession.activate(pad);
+    if (sessionChanged) syncDiagnosticResetUI();
     setConnectedUI(true);
     padName.textContent = pad.id;
 
-    if (pad.id !== lastPadId) {
-      lastPadId = pad.id;
+    if (sessionChanged) {
       rebuildButtonGrid(getLabelsFor(pad.id));
       document.getElementById("deviceName").textContent = pad.id;
       document.getElementById("deviceButtons").textContent = `${pad.buttons.length} boutons`;
@@ -2362,14 +1338,7 @@ function loop() {
         : "Mapping non standard : vérifiez visuellement chaque bouton, certains libellés peuvent différer.";
       document.getElementById("deviceSupport").textContent = hasStandardMapping ? "Mapping standard" : "À vérifier";
       document.getElementById("deviceSupport").dataset.status = hasStandardMapping ? "ok" : "warn";
-      prevButtonStates = [];
-      lastReleaseTimes = [];
-      neutralDrift.left.reset();
-      neutralDrift.right.reset();
-      triggerStability.lt.reset();
-      triggerStability.rt.reset();
-      vibrationCommands.strong = "pending";
-      vibrationCommands.weak = "pending";
+
       const controllerType = detectControllerType(pad.id);
       if (controllerType !== currentSilhouetteType) {
         currentSilhouetteType = controllerType;
@@ -2387,8 +1356,8 @@ function loop() {
     if (mashTest && !mashTest.finished) {
       mashTest.feed(pad.buttons, now, frameGapMs, gamepadTimestamp);
       if (mashTest.finished) {
-        lastMashResults = mashTest.results;
-        renderMashSummaryTable(lastMashResults);
+        diagnosticSession.mashResults = mashTest.results;
+        renderMashSummaryTable(diagnosticSession.mashResults);
         showMashScreen("summary");
         renderGuide();
       } else {
@@ -2451,7 +1420,7 @@ function loop() {
 
     pad.buttons.forEach((btn, i) => {
       const cell = buttonCells[i];
-      const wasPressed = prevButtonStates[i] || false;
+      const wasPressed = diagnosticSession.prevButtonStates[i] || false;
       const pressed = isButtonPressed(btn, i, wasPressed);
       if (cell) {
         if (pressed) cell.classList.add("active");
@@ -2460,11 +1429,11 @@ function loop() {
       if (pressed && !wasPressed) {
         const label = currentLabels[i] || `Bouton ${i}`;
         pressCountByButton.set(label, (pressCountByButton.get(label) || 0) + 1);
-        const sinceRelease = lastReleaseTimes[i];
+        const sinceRelease = diagnosticSession.lastReleaseTimes[i];
         if (sinceRelease != null && eventTime - sinceRelease < CHATTER_THRESHOLD_MS) {
-          chatterTotal++;
+          diagnosticSession.chatterTotal++;
           chatterByButton.set(label, (chatterByButton.get(label) || 0) + 1);
-          chatterCountEl.textContent = chatterTotal;
+          chatterCountEl.textContent = diagnosticSession.chatterTotal;
           logPress(label, { value: btn.value, eventTime, chatterDelayMs: eventTime - sinceRelease });
           if (cell) {
             cell.classList.add("chatter");
@@ -2475,11 +1444,12 @@ function loop() {
         }
       }
       if (!pressed && wasPressed) {
-        lastReleaseTimes[i] = eventTime;
+        diagnosticSession.lastReleaseTimes[i] = eventTime;
       }
-      prevButtonStates[i] = pressed;
+      diagnosticSession.prevButtonStates[i] = pressed;
     });
   } else {
+    diagnosticSession.releaseController();
     setConnectedUI(false);
     updateVibStatus();
   }

@@ -1,6 +1,6 @@
 # GamepadTester
 
-App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette via la Gamepad API du navigateur, dans `index.html` (single-page, tout le rendu DOM est généré par `src/main.js`).
+App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette via la Gamepad API du navigateur, dans `index.html` (single-page, le gabarit DOM de `src/appMarkup.js` est monté par `src/main.js`).
 
 ## Conventions
 
@@ -18,7 +18,12 @@ App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette
 
 ## Structure
 
-- `src/main.js` — point d'entrée, construit le DOM, orchestre le diagnostic guidé / mode laboratoire et la boucle `requestAnimationFrame`. Contient aussi l'export du rapport de diagnostic en PDF (`buildDiagnosticReport()` collecte l'état courant, `buildDiagnosticPdf()` le met en page). `jspdf` et `jspdf-autotable` doivent rester chargés dynamiquement au moment de l'export pour préserver le bundle initial.
+- `src/main.js` — point d'entrée, monte le DOM, orchestre le diagnostic guidé / mode laboratoire et la boucle `requestAnimationFrame`. `jspdf` et `jspdf-autotable` doivent rester chargés dynamiquement au moment de l'export pour préserver le bundle initial.
+- `src/appMarkup.js` — gabarit HTML statique de la page, séparé de l'orchestration.
+- `src/diagnosticSession.js` — propriétaire unique des mesures de la manette active. Un changement ou une reconnexion de manette remplace atomiquement la session pour empêcher tout mélange de résultats.
+- `src/stickDiagnostics.js` — analyse pure et structurée de l'amplitude des sticks ; le texte affiché ne doit jamais servir de donnée métier.
+- `src/diagnosticReport.js` — instantané pur de la session et calcul des verdicts partagés par l'écran et le PDF.
+- `src/diagnosticPdf.js` — mise en page du rapport PDF, sans acquisition ni mutation de la session.
 - `src/gamepad.js` — accès Gamepad API, détection de type de manette, labels de boutons, dead zone, état pressé digital/analogique (`isButtonPressed`), détection de drift du point neutre (`NeutralDriftTracker`) et de stabilité des gâchettes tenues à un palier (`TriggerStabilityTracker`).
 - `src/guideFlow.js` — logique pure des étapes, tâches et états du parcours guidé, ainsi que normalisation des résultats des commandes haptiques.
 - `src/controllerSilhouette.js` — silhouette visuelle (image SVG Xbox/PlayStation + zones de surbrillance positionnées en % du viewBox d'origine). Layouts de boutons/sticks codés en dur dans `LAYOUTS`. Se dégrade proprement (frame caché) pour les manettes "generic".
