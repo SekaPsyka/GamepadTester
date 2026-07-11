@@ -2,6 +2,8 @@
 
 Application web (Vite + JS vanilla) pour tester et diagnostiquer une manette de jeu directement dans le navigateur, via la Gamepad API.
 
+**[Ouvrir Gamepad Tester](https://gamepad-tester-pi.vercel.app)**
+
 ## Fonctionnalités
 
 - Diagnostic guidé en cinq étapes, avec mode laboratoire pour les valeurs brutes
@@ -14,6 +16,13 @@ Application web (Vite + JS vanilla) pour tester et diagnostiquer une manette de 
 - Export PDF du rapport de diagnostic
 
 Les résultats distinguent les mesures cohérentes, les points à confirmer et les tests non réalisés. L'application ne prétend pas mesurer la latence matérielle, que la Gamepad API du navigateur n'expose pas de manière fiable.
+
+## Compatibilité
+
+- Utilisez un navigateur récent prenant en charge la Gamepad API.
+- La manette doit généralement être réveillée par un premier appui avant d'être exposée au navigateur.
+- Les vibrations dépendent de la manette, du navigateur et du système ; leur prise en charge n'est pas garantie.
+- Les mesures sont réalisées localement dans le navigateur et ne remplacent pas un diagnostic matériel certifié.
 
 ## Développement
 

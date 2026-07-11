@@ -32,7 +32,7 @@ App web (Vite + JS vanilla, pas de framework) qui teste/diagnostique une manette
 - `src/themes.js` / `src/storage.js` — thèmes de couleur (CSS custom properties) et persistance `localStorage`.
 - `src/style.css` — feuille de style unique, pas de CSS modules.
 - `src/assets/controllers/*.svg` — assets visuels de manette, voir `CREDITS.md` (licence MIT, Gamepad Asset Pack).
-- `test/*.test.js` — tests déterministes des zones mortes, de l'hystérésis, du point neutre, des gâchettes et du diagnostic répété des boutons.
+- `test/*.test.js` — tests déterministes des zones mortes, de l'hystérésis, du point neutre, des gâchettes, du diagnostic répété des boutons, des sessions par manette, de l'analyse structurée des sticks et des verdicts du rapport.
 
 ## Tester sans manette physique
 
