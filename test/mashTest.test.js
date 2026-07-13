@@ -2,14 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { MashSequenceTest, buildMashQueue, buildMashVerdict, gradeForChatter } from "../src/mashTest.js";
 
-test("exclut les boutons système Guide et PS du diagnostic répété", () => {
-  const xboxQueue = buildMashQueue(["A", "B", "Guide"], 3);
-  const playstationQueue = buildMashQueue(["✕", "PS", "Pavé tactile"], 3);
-  const genericQueue = buildMashQueue(["B0", "B1", "B16"], 3);
+test("exclut les gâchettes analogiques et les boutons système du diagnostic répété", () => {
+  const xboxQueue = buildMashQueue(["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "Guide"], 11);
+  const playstationQueue = buildMashQueue(["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Share", "Options", "PS", "Pavé tactile"], 12);
+  const genericQueue = buildMashQueue(Array.from({ length: 17 }, (_, index) => `B${index}`), 17);
 
-  assert.deepEqual(xboxQueue.map(({ label }) => label), ["A", "B"]);
-  assert.deepEqual(playstationQueue.map(({ label }) => label), ["✕", "Pavé tactile"]);
-  assert.deepEqual(genericQueue.map(({ label }) => label), ["B0", "B1", "B16"]);
+  assert.deepEqual(xboxQueue.map(({ label }) => label), ["A", "B", "X", "Y", "LB", "RB", "View", "Menu"]);
+  assert.deepEqual(playstationQueue.map(({ label }) => label), ["✕", "○", "□", "△", "L1", "R1", "Share", "Options", "Pavé tactile"]);
+  assert.deepEqual(genericQueue.map(({ label }) => label), ["B0", "B1", "B2", "B3", "B4", "B5", "B8", "B9", "B10", "B11", "B12", "B13", "B14", "B15", "B16"]);
 });
 
 test("ne rend pas de note avec moins de vingt appuis", () => {

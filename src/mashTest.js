@@ -1,15 +1,16 @@
 import { CHATTER_THRESHOLD_MS, isButtonPressed } from "./gamepad.js";
 
 const SYSTEM_BUTTON_LABELS = new Set(["Guide", "PS"]);
+const ANALOG_TRIGGER_INDICES = new Set([6, 7]);
 
-// Les boutons système peuvent être interceptés par l'OS ou le navigateur et ne répondent
-// pas de façon homogène. Les demander dans une séquence répétée peut bloquer le diagnostic
-// sans apporter d'information fiable sur les contacts mécaniques de la manette.
+// Les boutons système peuvent être interceptés par l'OS ou le navigateur. LT/RT suivent
+// quant à eux une course analogique avec hystérésis : leur imposer un rythme d'appuis
+// produirait un verdict moins fiable que leur mesure dédiée de position et de stabilité.
 export function buildMashQueue(labels, buttonCount) {
   return Array.from({ length: Math.min(labels.length, buttonCount) }, (_, index) => ({
     index,
     label: labels[index] || `Bouton ${index}`,
-  })).filter(({ label }) => !SYSTEM_BUTTON_LABELS.has(label));
+  })).filter(({ index, label }) => !ANALOG_TRIGGER_INDICES.has(index) && !SYSTEM_BUTTON_LABELS.has(label));
 }
 
 // Un écart anormalement long entre deux frames (onglet en arrière-plan, throttling

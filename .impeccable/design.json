@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-13T19:44:55Z",
+  "title": "Design System: GamepadTester",
+  "extensions": {
+    "colorMeta": {
+      "measurement-black": {
+        "role": "neutral",
+        "displayName": "Noir de mesure",
+        "canonical": "#090b10",
+        "tonalRamp": ["oklch(15% 0.012 260)", "oklch(25% 0.012 260)", "oklch(35% 0.012 260)", "oklch(45% 0.012 260)", "oklch(55% 0.012 260)", "oklch(65% 0.012 260)", "oklch(80% 0.012 260)", "oklch(95% 0.012 260)"]
+      },
+      "panel-slate": {
+        "role": "neutral",
+        "displayName": "Ardoise de panneau",
+        "canonical": "#121722",
+        "tonalRamp": ["oklch(15% 0.022 260)", "oklch(25% 0.022 260)", "oklch(35% 0.022 260)", "oklch(45% 0.022 260)", "oklch(55% 0.022 260)", "oklch(65% 0.022 260)", "oklch(80% 0.022 260)", "oklch(95% 0.022 260)"]
+      },
+      "raised-slate": {
+        "role": "neutral",
+        "displayName": "Ardoise surélevée",
+        "canonical": "#171d2a",
+        "tonalRamp": ["oklch(15% 0.024 260)", "oklch(25% 0.024 260)", "oklch(35% 0.024 260)", "oklch(45% 0.024 260)", "oklch(55% 0.024 260)", "oklch(65% 0.024 260)", "oklch(80% 0.024 260)", "oklch(95% 0.024 260)"]
+      },
+      "technical-line": {
+        "role": "neutral",
+        "displayName": "Trait technique",
+        "canonical": "#283143",
+        "tonalRamp": ["oklch(15% 0.03 260)", "oklch(25% 0.03 260)", "oklch(35% 0.03 260)", "oklch(45% 0.03 260)", "oklch(55% 0.03 260)", "oklch(65% 0.03 260)", "oklch(80% 0.03 260)", "oklch(95% 0.03 260)"]
+      },
+      "signal-primary": {
+        "role": "primary",
+        "displayName": "Signal principal",
+        "canonical": "#00f0ff",
+        "tonalRamp": ["oklch(15% 0.14 195)", "oklch(25% 0.14 195)", "oklch(35% 0.14 195)", "oklch(45% 0.14 195)", "oklch(55% 0.14 195)", "oklch(65% 0.14 195)", "oklch(80% 0.14 195)", "oklch(95% 0.14 195)"]
+      },
+      "signal-secondary": {
+        "role": "secondary",
+        "displayName": "Signal secondaire",
+        "canonical": "#ff00e6",
+        "tonalRamp": ["oklch(15% 0.25 330)", "oklch(25% 0.25 330)", "oklch(35% 0.25 330)", "oklch(45% 0.25 330)", "oklch(55% 0.25 330)", "oklch(65% 0.25 330)", "oklch(80% 0.25 330)", "oklch(95% 0.25 330)"]
+      },
+      "signal-tint": {
+        "role": "neutral",
+        "displayName": "Teinte de signal",
+        "canonical": "#161a2c",
+        "tonalRamp": ["oklch(15% 0.035 275)", "oklch(25% 0.035 275)", "oklch(35% 0.035 275)", "oklch(45% 0.035 275)", "oklch(55% 0.035 275)", "oklch(65% 0.035 275)", "oklch(80% 0.035 275)", "oklch(95% 0.035 275)"]
+      },
+      "validation-green": {
+        "role": "tertiary",
+        "displayName": "Validation",
+        "canonical": "#45d483",
+        "tonalRamp": ["oklch(15% 0.14 150)", "oklch(25% 0.14 150)", "oklch(35% 0.14 150)", "oklch(45% 0.14 150)", "oklch(55% 0.14 150)", "oklch(65% 0.14 150)", "oklch(80% 0.14 150)", "oklch(95% 0.14 150)"]
+      },
+      "attention-amber": {
+        "role": "tertiary",
+        "displayName": "Attention",
+        "canonical": "#f3c969",
+        "tonalRamp": ["oklch(15% 0.12 85)", "oklch(25% 0.12 85)", "oklch(35% 0.12 85)", "oklch(45% 0.12 85)", "oklch(55% 0.12 85)", "oklch(65% 0.12 85)", "oklch(80% 0.12 85)", "oklch(95% 0.12 85)"]
+      },
+      "anomaly-red": {
+        "role": "tertiary",
+        "displayName": "Anomalie",
+        "canonical": "#ff6475",
+        "tonalRamp": ["oklch(15% 0.18 20)", "oklch(25% 0.18 20)", "oklch(35% 0.18 20)", "oklch(45% 0.18 20)", "oklch(55% 0.18 20)", "oklch(65% 0.18 20)", "oklch(80% 0.18 20)", "oklch(95% 0.18 20)"]
+      },
+      "measurement-green": {
+        "role": "tertiary",
+        "displayName": "Vert de mesure",
+        "canonical": "#39ff8c",
+        "tonalRamp": ["oklch(15% 0.2 150)", "oklch(25% 0.2 150)", "oklch(35% 0.2 150)", "oklch(45% 0.2 150)", "oklch(55% 0.2 150)", "oklch(65% 0.2 150)", "oklch(80% 0.2 150)", "oklch(95% 0.2 150)"]
+      },
+      "measurement-yellow": {
+        "role": "tertiary",
+        "displayName": "Jaune de mesure",
+        "canonical": "#ffe600",
+        "tonalRamp": ["oklch(15% 0.18 100)", "oklch(25% 0.18 100)", "oklch(35% 0.18 100)", "oklch(45% 0.18 100)", "oklch(55% 0.18 100)", "oklch(65% 0.18 100)", "oklch(80% 0.18 100)", "oklch(95% 0.18 100)"]
+      },
+      "explanation-gray": {
+        "role": "neutral",
+        "displayName": "Gris d'explication",
+        "canonical": "#a4adbd",
+        "tonalRamp": ["oklch(15% 0.02 255)", "oklch(25% 0.02 255)", "oklch(35% 0.02 255)", "oklch(45% 0.02 255)", "oklch(55% 0.02 255)", "oklch(65% 0.02 255)", "oklch(80% 0.02 255)", "oklch(95% 0.02 255)"]
+      },
+      "reading-white": {
+        "role": "neutral",
+        "displayName": "Blanc de lecture",
+        "canonical": "#f2f5f8",
+        "tonalRamp": ["oklch(15% 0.008 250)", "oklch(25% 0.008 250)", "oklch(35% 0.008 250)", "oklch(45% 0.008 250)", "oklch(55% 0.008 250)", "oklch(65% 0.008 250)", "oklch(80% 0.008 250)", "oklch(95% 0.008 250)"]
+      },
+      "control-black": {
+        "role": "neutral",
+        "displayName": "Noir de contrôle",
+        "canonical": "#0d0f18",
+        "tonalRamp": ["oklch(15% 0.016 265)", "oklch(25% 0.016 265)", "oklch(35% 0.016 265)", "oklch(45% 0.016 265)", "oklch(55% 0.016 265)", "oklch(65% 0.016 265)", "oklch(80% 0.016 265)", "oklch(95% 0.016 265)"]
+      },
+      "graph-black": {
+        "role": "neutral",
+        "displayName": "Noir de graphe",
+        "canonical": "#060710",
+        "tonalRamp": ["oklch(15% 0.014 275)", "oklch(25% 0.014 275)", "oklch(35% 0.014 275)", "oklch(45% 0.014 275)", "oklch(55% 0.014 275)", "oklch(65% 0.014 275)", "oklch(80% 0.014 275)", "oklch(95% 0.014 275)"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Identité technique",
+        "purpose": "Nom de l'application, une fois dans l'en-tête."
+      },
+      "headline": {
+        "displayName": "Étape guidée",
+        "purpose": "Titre principal de la tâche en cours."
+      },
+      "title": {
+        "displayName": "Titre d'action",
+        "purpose": "Sous-ensemble ou mesure ciblée."
+      },
+      "body": {
+        "displayName": "Explication",
+        "purpose": "Consignes et contexte en langage simple."
+      },
+      "label": {
+        "displayName": "Repère technique",
+        "purpose": "États courts, métadonnées et libellés."
+      },
+      "data": {
+        "displayName": "Donnée mesurée",
+        "purpose": "Valeurs brutes, durées et résultats comparables."
+      }
+    },
+    "shadows": [
+      {
+        "name": "active-relief",
+        "value": "0 4px 8px rgba(0, 0, 0, 0.18)",
+        "purpose": "Distinguer le bloc de consigne qui réclame l'attention immédiate."
+      },
+      {
+        "name": "panel-highlight",
+        "value": "inset 0 1px 0 rgba(255, 255, 255, 0.03)",
+        "purpose": "Séparer subtilement un panneau sombre de son arrière-plan."
+      },
+      {
+        "name": "interaction-glow",
+        "value": "0 0 10px color-mix(in srgb, var(--accent) 30%, transparent)",
+        "purpose": "Signaler le survol ou le focus sans modifier la géométrie."
+      },
+      {
+        "name": "dialog-presence",
+        "value": "0 0 40px color-mix(in srgb, var(--accent) 12%, transparent)",
+        "purpose": "Détacher un dialogue natif de son arrière-plan."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "80ms ease",
+        "purpose": "Transitions des indicateurs et pistes de progression."
+      },
+      {
+        "name": "control-feedback",
+        "value": "120ms ease",
+        "purpose": "Survol, focus, appui et changement de bordure des contrôles."
+      },
+      {
+        "name": "panel-state",
+        "value": "150ms ease",
+        "purpose": "Changement d'état d'une tâche ou d'un panneau."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "Alternative quasi instantanée lorsque l'utilisateur réduit les animations."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide-stack",
+        "value": "960px"
+      },
+      {
+        "name": "compact-table",
+        "value": "720px"
+      },
+      {
+        "name": "mobile",
+        "value": "560px"
+      },
+      {
+        "name": "narrow-mobile",
+        "value": "360px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Bouton par défaut",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "Action secondaire sombre utilisée dans le parcours et le laboratoire.",
+      "html": "<button class=\"ds-button\">Réinitialiser</button>",
+      "css": ".ds-button { min-height: 40px; padding: 8px 14px; border: 1px solid var(--panel-border, #283143); border-radius: 8px; background: #0d0f18; color: var(--text, #f2f5f8); font: 400 12px \"Segoe UI\", system-ui, sans-serif; cursor: pointer; transition: background-color .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease, transform .12s ease; } .ds-button:hover { border-color: var(--accent, #00f0ff); color: var(--accent, #00f0ff); box-shadow: 0 0 10px color-mix(in srgb, var(--accent, #00f0ff) 30%, transparent); } .ds-button:focus-visible { outline: 2px solid var(--accent, #00f0ff); outline-offset: 3px; } .ds-button:active { transform: scale(.96); }"
+    },
+    {
+      "name": "Bouton principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Action attendue pour démarrer, arrêter ou confirmer une mesure.",
+      "html": "<button class=\"ds-button-primary\">Démarrer la mesure</button>",
+      "css": ".ds-button-primary { min-height: 40px; padding: 8px 14px; border: 1px solid var(--accent, #00f0ff); border-radius: 8px; background: color-mix(in srgb, var(--accent, #00f0ff) 14%, var(--panel, #121722)); color: var(--accent, #00f0ff); font: 600 12px \"Segoe UI\", system-ui, sans-serif; cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease; } .ds-button-primary:hover { box-shadow: 0 0 16px color-mix(in srgb, var(--accent, #00f0ff) 55%, transparent); } .ds-button-primary:focus-visible { outline: 2px solid var(--accent, #00f0ff); outline-offset: 3px; } .ds-button-primary:active { transform: scale(.96); }"
+    },
+    {
+      "name": "Champ texte",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Contrôle compact destiné aux valeurs ou libellés saisis.",
+      "html": "<input class=\"ds-field\" type=\"text\" value=\"Manette 1\" aria-label=\"Nom de la manette\">",
+      "css": ".ds-field { min-height: 40px; padding: 8px 10px; border: 1px solid var(--panel-border, #283143); border-radius: 8px; background: #0d0f18; color: var(--text, #f2f5f8); font: 400 12px \"Segoe UI\", system-ui, sans-serif; transition: border-color .12s ease, box-shadow .12s ease; } .ds-field:hover { border-color: var(--accent, #00f0ff); } .ds-field:focus-visible { outline: none; border-color: var(--accent, #00f0ff); box-shadow: 0 0 0 1px var(--accent, #00f0ff), 0 0 10px color-mix(in srgb, var(--accent, #00f0ff) 35%, transparent); }"
+    },
+    {
+      "name": "Panneau de diagnostic",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Conteneur standard d'un groupe de mesures cohérent.",
+      "html": "<section class=\"ds-panel\"><h3>Stabilité des gâchettes</h3><p>Maintenez la position demandée pour lancer l'analyse.</p></section>",
+      "css": ".ds-panel { padding: 20px; border: 1px solid var(--panel-border, #283143); border-radius: 10px; background: var(--panel, #121722); color: var(--text, #f2f5f8); box-shadow: inset 0 1px 0 rgba(255,255,255,.03); font-family: \"Segoe UI\", system-ui, sans-serif; } .ds-panel h3 { margin: 0 0 8px; color: var(--text, #f2f5f8); font: 600 22px/1.25 \"Bahnschrift Condensed\", \"Arial Narrow\", \"Segoe UI\", sans-serif; } .ds-panel p { margin: 0; max-width: 72ch; color: var(--text-dim, #a4adbd); font-size: 13px; line-height: 1.5; } .ds-panel:focus-within { border-color: color-mix(in srgb, var(--accent, #00f0ff) 62%, var(--panel-border, #283143)); }"
+    },
+    {
+      "name": "Puce d'état",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "État textuel compact qui reste compréhensible sans sa couleur.",
+      "html": "<span class=\"ds-status-chip\">Terminé</span>",
+      "css": ".ds-status-chip { display: inline-flex; align-items: center; min-height: 26px; padding: 6px 9px; border: 1px solid color-mix(in srgb, var(--status-ok, #45d483) 62%, var(--panel-border, #283143)); border-radius: 999px; background: color-mix(in srgb, var(--status-ok, #45d483) 7%, var(--panel, #121722)); color: var(--status-ok, #45d483); font: 600 10px/1.4 \"Consolas\", monospace; } .ds-status-chip:hover { border-color: var(--status-ok, #45d483); } .ds-status-chip:focus-visible { outline: 2px solid var(--accent, #00f0ff); outline-offset: 3px; }"
+    },
+    {
+      "name": "Sélecteur de mode",
+      "kind": "nav",
+      "refersTo": "mode-switch",
+      "description": "Navigation segmentée entre parcours guidé et mode laboratoire.",
+      "html": "<nav class=\"ds-mode-switch\" aria-label=\"Mode d'utilisation\"><button class=\"ds-mode-switch__item ds-mode-switch__item--active\">Parcours guidé</button><button class=\"ds-mode-switch__item\">Laboratoire</button></nav>",
+      "css": ".ds-mode-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--panel-border, #283143); border-radius: 8px; background: var(--bg, #090b10); } .ds-mode-switch__item { min-height: 36px; padding: 8px 12px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-dim, #a4adbd); font: 400 12px \"Segoe UI\", system-ui, sans-serif; cursor: pointer; } .ds-mode-switch__item:hover { color: var(--text, #f2f5f8); } .ds-mode-switch__item:focus-visible { outline: 2px solid var(--accent, #00f0ff); outline-offset: 2px; } .ds-mode-switch__item--active { border-color: color-mix(in srgb, var(--accent, #00f0ff) 62%, var(--panel-border, #283143)); background: color-mix(in srgb, var(--accent, #00f0ff) 7%, var(--panel, #121722)); color: var(--accent, #00f0ff); font-weight: 600; }"
+    },
+    {
+      "name": "Tâche guidée courante",
+      "kind": "custom",
+      "refersTo": "task-current",
+      "description": "Rangée complète qui indique l'action en cours et son état.",
+      "html": "<div class=\"ds-task-current\"><span class=\"ds-task-current__marker\">2</span><span><strong>Stabilisez LT</strong><small>Maintenez la zone 35–65 %</small></span><span class=\"ds-task-current__state\">En cours</span></div>",
+      "css": ".ds-task-current { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent, #00f0ff) 62%, var(--panel-border, #283143)); border-radius: 8px; background: color-mix(in srgb, var(--accent, #00f0ff) 7%, var(--panel, #121722)); color: var(--text, #f2f5f8); font-family: \"Segoe UI\", system-ui, sans-serif; } .ds-task-current__marker { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--accent, #00f0ff); border-radius: 50%; color: var(--accent, #00f0ff); font: 600 11px \"Consolas\", monospace; } .ds-task-current strong, .ds-task-current small { display: block; } .ds-task-current strong { font-size: 13px; } .ds-task-current small { margin-top: 3px; color: var(--text-dim, #a4adbd); font-size: 11px; } .ds-task-current__state { color: var(--accent, #00f0ff); font: 600 11px \"Consolas\", monospace; } .ds-task-current:focus-within { box-shadow: 0 0 10px color-mix(in srgb, var(--accent, #00f0ff) 30%, transparent); }"
+    },
+    {
+      "name": "Progression de mesure",
+      "kind": "custom",
+      "refersTo": "progress-track",
+      "description": "Piste compacte pour la durée ou la couverture d'une mesure.",
+      "html": "<div class=\"ds-progress\" role=\"progressbar\" aria-valuenow=\"65\" aria-valuemin=\"0\" aria-valuemax=\"100\" aria-label=\"Progression de la mesure\"><span></span></div>",
+      "css": ".ds-progress { width: 100%; height: 6px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--panel-border, #283143) 72%, var(--bg, #090b10)); } .ds-progress span { display: block; width: 65%; height: 100%; border-radius: inherit; background: var(--accent, #00f0ff); box-shadow: 0 0 12px color-mix(in srgb, var(--accent, #00f0ff) 45%, transparent); transition: width .08s ease; } .ds-progress:focus-visible { outline: 2px solid var(--accent, #00f0ff); outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Le banc d'essai lisible",
+    "overview": "GamepadTester ressemble à un instrument de mesure fiable que l'on comprend sans manuel. L'interface est sombre, précise et pédagogique : elle concentre l'attention sur la tâche en cours, rend chaque état observable et réserve les signaux lumineux aux actions ou aux résultats qui comptent.\n\nLa densité est maîtrisée, jamais spectaculaire. Le système rejette explicitement les interfaces gaming excessivement chargées, les effets visuels gratuits, le jargon non expliqué et les verdicts alarmistes. Les surfaces techniques restent familières, les consignes précèdent les mesures et le mode laboratoire peut être plus dense sans contaminer la simplicité du parcours guidé.",
+    "keyCharacteristics": [
+      "Sombre et contrasté, conçu comme un outil de diagnostic.",
+      "Compact, tactile et sans ambiguïté.",
+      "Néon fonctionnel réservé aux états, aux mesures et aux actions.",
+      "Responsive par restructuration des panneaux, jamais par réduction illisible.",
+      "Mouvement bref et informatif, désactivable avec la préférence de réduction des animations."
+    ],
+    "rules": [
+      {
+        "name": "The Instrument Rule",
+        "body": "Chaque élément visuel doit aider à préparer, exécuter ou interpréter une mesure. Tout ornement sans fonction est interdit.",
+        "section": "overview"
+      },
+      {
+        "name": "The Signal Rarity Rule",
+        "body": "Les accents saturés servent uniquement aux actions, aux sélections et aux états mesurés. Une grande surface inactive ne doit jamais être saturée.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three Voices Rule",
+        "body": "Bahnschrift nomme, Segoe UI explique et Consolas mesure. Aucun autre rôle typographique ne doit être inventé.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal-First Rule",
+        "body": "Une surface au repos est séparée par sa teinte et une bordure de 1px. Si une ombre devient le premier élément visible, elle est trop forte.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Complete-State Rule",
+        "body": "Tout composant interactif doit définir repos, survol, focus, appui et indisponibilité ; un état actif doit toujours avoir un libellé compréhensible.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do guider l'utilisateur avant chaque mesure et maintenir la tâche active comme point focal dominant.",
+      "Do utiliser le signal principal pour l'action ou la mesure courante, et les couleurs sémantiques pour les résultats nommés.",
+      "Do conserver les bordures complètes de 1px, les rayons de 8 à 10px et les espacements récurrents de 8, 12, 16, 20 et 24px.",
+      "Do garder les chiffres comparables en Consolas avec des chiffres tabulaires.",
+      "Do communiquer chaque état par une combinaison de couleur, de texte et de structure compatible clavier et WCAG 2.2 AA.",
+      "Do restructurer les panneaux aux seuils existants et préserver des cibles tactiles d'au moins 44px sur mobile."
+    ],
+    "donts": [
+      "Don't créer une interface gaming excessivement chargée ni saturer les surfaces inactives.",
+      "Don't ajouter d'effets visuels gratuits, de mouvement décoratif, de texte en dégradé ou de glassmorphism.",
+      "Don't employer du jargon non expliqué dans les consignes, les états ou les résultats.",
+      "Don't afficher de verdicts alarmistes qui présentent une mesure imparfaite comme une certitude matérielle.",
+      "Don't utiliser une bande colorée latérale de plus de 1px comme décoration de carte ou d'alerte.",
+      "Don't inventer une nouvelle forme de bouton, de champ ou de panneau pour une seule fonctionnalité.",
+      "Don't réduire les textes ou les cibles pour faire tenir une grille mobile ; réorganiser la structure à la place."
+    ]
+  }
+}

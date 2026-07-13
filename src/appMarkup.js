@@ -271,7 +271,7 @@ export const APP_MARKUP = `
     <div class="mash-panel" tabindex="-1">
       <div id="mashSetup">
         <h2 id="mashDialogTitle">Diagnostic des boutons</h2>
-        <p class="note">Préparez-vous avant de commencer : le test passera ensuite automatiquement d'un bouton au suivant. Le bouton système Guide/PS est volontairement exclu.</p>
+        <p class="note">Préparez-vous avant de commencer : le test passera ensuite automatiquement d'un bouton numérique au suivant. LT/RT et le bouton système Guide/PS sont volontairement exclus.</p>
         <div class="mash-optimal-conditions">
           <h3>Pour un résultat fiable</h3>
           <ul>
