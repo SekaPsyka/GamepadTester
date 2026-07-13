@@ -8,7 +8,10 @@ import {
   CHATTER_THRESHOLD_MS,
   NEUTRAL_DRIFT_WARN_THRESHOLD,
   isButtonPressed,
-  TRIGGER_REQUIRED_HOLD_MS,
+  isPassiveChatterButton,
+  TRIGGER_SETTLE_MS,
+  TRIGGER_TARGET_MIN,
+  TRIGGER_TARGET_MAX,
   triggerStabilityGrade,
 } from "./gamepad.js";
 import { getTheme, setTheme } from "./storage.js";
@@ -77,7 +80,7 @@ const GUIDE_STEPS = [
     id: "triggers",
     label: "Gâchettes",
     title: "Contrôlez les gâchettes et les vibrations",
-    description: "Maintenez chaque gâchette à mi-course pendant cinq secondes, puis vérifiez séparément les deux moteurs de vibration.",
+    description: "Placez puis stabilisez chaque gâchette avant les cinq secondes mesurées, puis vérifiez séparément les deux moteurs de vibration.",
   },
   {
     id: "buttons",
@@ -129,6 +132,16 @@ function getGuideFlow() {
   const pad = getSelectedGamepad();
   const leftNeutral = neutralDrift.left.getOffset();
   const rightNeutral = neutralDrift.right.getOffset();
+  const triggerNow = performance.now();
+  const triggerState = (side) => {
+    const tracker = triggerStability[side];
+    const attempting = tracker.isAttempting();
+    return {
+      complete: tracker.getResult().measured && !attempting,
+      active: attempting,
+      detail: triggerGuideDetail(tracker, triggerNow),
+    };
+  };
   return buildGuideFlow({
     connected: Boolean(isPadConnected),
     neutral: {
@@ -140,8 +153,8 @@ function getGuideFlow() {
       right: { complete: calibration.right.completed, active: calibration.right.active },
     },
     triggers: {
-      lt: { complete: triggerStability.lt.getResult().measured, active: triggerStability.lt.isAttempting() },
-      rt: { complete: triggerStability.rt.getResult().measured, active: triggerStability.rt.isAttempting() },
+      lt: triggerState("lt"),
+      rt: triggerState("rt"),
     },
     vibrationSupported: pad ? Boolean(pad.vibrationActuator) : null,
     vibrationCommands,
@@ -156,8 +169,8 @@ function taskInstruction(stepId, taskId) {
     neutral: ["Posez la manette et ne la touchez plus", "Démarrez la mesure de trois secondes lorsque les deux sticks sont complètement relâchés."],
     "amplitude-left": ["Faites trois tours avec le stick gauche", "Poussez le stick jusqu'au bord, puis effectuez trois tours complets et réguliers dans le même sens. L'analyse s'arrêtera automatiquement après le troisième tour."],
     "amplitude-right": ["Faites trois tours avec le stick droit", "Poussez le stick jusqu'au bord, puis effectuez trois tours complets et réguliers dans le même sens. L'analyse s'arrêtera automatiquement après le troisième tour."],
-    "trigger-lt": ["Maintenez LT / L2 à mi-course", "Gardez la gâchette aussi stable que possible pendant cinq secondes. La mesure démarre automatiquement."],
-    "trigger-rt": ["Maintenez RT / R2 à mi-course", "Gardez la gâchette aussi stable que possible pendant cinq secondes. La mesure démarre automatiquement."],
+    "trigger-lt": ["Positionnez puis stabilisez LT / L2", "Amenez la gâchette dans la zone 35–65 %, puis gardez le palier fixe. Les cinq secondes ne démarrent qu'après la stabilisation."],
+    "trigger-rt": ["Positionnez puis stabilisez RT / R2", "Amenez la gâchette dans la zone 35–65 %, puis gardez le palier fixe. Les cinq secondes ne démarrent qu'après la stabilisation."],
     "vibration-strong": ["Testez le moteur gauche", "L'application enverra une commande à 100 % pendant 600 ms, puis passera automatiquement au moteur droit."],
     "vibration-weak": ["Testez le moteur droit", "L'application enverra une commande à 100 % pendant 600 ms, puis terminera cette étape."],
     "button-diagnostic": ["Préparez le diagnostic des boutons", "Consultez d'abord les consignes et la durée estimée. Le test ne démarrera qu'après votre confirmation."],
@@ -1057,11 +1070,25 @@ const triggerStabilityResultEls = {
 const triggerGuideStates = { lt: "idle", rt: "idle" };
 
 function syncTriggerGuideState(side, tracker, result) {
-  const nextState = result.measured ? "complete" : tracker.isAttempting() ? "active" : "idle";
+  const trackerPhase = tracker.getStatus(performance.now()).phase;
+  const nextState = tracker.isAttempting() ? trackerPhase : result.measured ? "complete" : "idle";
   if (nextState === triggerGuideStates[side]) return;
   triggerGuideStates[side] = nextState;
   if (nextState !== "idle") skippedGuideSteps.delete("triggers");
   renderGuide();
+}
+
+const triggerTargetLabel = `${Math.round(TRIGGER_TARGET_MIN * 100)}–${Math.round(TRIGGER_TARGET_MAX * 100)} %`;
+
+function triggerGuideDetail(tracker, now) {
+  const details = {
+    idle: `À positionner entre ${triggerTargetLabel}`,
+    positioning: `Recherche de la zone ${triggerTargetLabel}`,
+    stabilizing: "Stabilisation du palier",
+    measuring: "Mesure de 5 s en cours",
+    complete: "Mesure terminée",
+  };
+  return details[tracker.getStatus(now).phase] || "Maintien à mi-course";
 }
 
 function triggerStabilityStatus(result) {
@@ -1082,28 +1109,47 @@ function triggerStabilityStatus(result) {
 function renderTriggerStability(side, now) {
   const tracker = triggerStability[side];
   const result = tracker.getResult();
+  const trackerStatus = tracker.getStatus(now);
   const el = triggerStabilityResultEls[side];
+  el.closest(".trigger-gauge").dataset.phase = trackerStatus.phase;
+  el.dataset.phase = trackerStatus.phase;
 
-  // Une nouvelle tentative en cours doit être visible même si un résultat précédent est
-  // déjà affiché, sinon on ne voit jamais qu'un nouveau test a démarré après relâchement.
-  if (tracker.isAttempting()) {
-    const remainingS = ((1 - tracker.getProgress(now)) * TRIGGER_REQUIRED_HOLD_MS) / 1000;
-    el.textContent = result.measured
-      ? `Stabilité : nouvelle mesure en cours, maintenez encore ${remainingS.toFixed(1)} s...`
-      : `Stabilité : maintenez encore ${remainingS.toFixed(1)} s...`;
-    el.className = "note mash-grade-na";
+  if (trackerStatus.phase === "positioning") {
+    const direction = trackerStatus.currentValue < TRIGGER_TARGET_MIN
+      ? "enfoncez encore un peu"
+      : "relâchez légèrement";
+    const restart = trackerStatus.notice === "moved" ? "Position déplacée — " : "";
+    el.textContent = `${restart}${direction}, puis arrêtez-vous dans la zone ${triggerTargetLabel}.`;
+    el.className = "note trigger-stability-status mash-grade-na";
+    syncTriggerGuideState(side, tracker, result);
+    return result;
+  }
+  if (trackerStatus.phase === "stabilizing") {
+    const remainingS = trackerStatus.remainingMs / 1000;
+    const restart = trackerStatus.notice === "moved" ? "Position déplacée — " : "";
+    el.textContent = `${restart}gardez ce palier encore ${remainingS.toFixed(1)} s pour lancer la mesure.`;
+    el.className = "note trigger-stability-status mash-grade-na";
+    syncTriggerGuideState(side, tracker, result);
+    return result;
+  }
+  if (trackerStatus.phase === "measuring") {
+    const remainingS = trackerStatus.remainingMs / 1000;
+    el.textContent = trackerStatus.retesting
+      ? `Nouvelle mesure en cours — maintenez encore ${remainingS.toFixed(1)} s.`
+      : `Position stable — mesure en cours, maintenez encore ${remainingS.toFixed(1)} s.`;
+    el.className = "note trigger-stability-status mash-grade-na";
     syncTriggerGuideState(side, tracker, result);
     return result;
   }
   if (!result.measured) {
-    el.textContent = "Stabilité : maintenez à mi-course pour mesurer...";
-    el.className = "note mash-grade-na";
+    el.textContent = `Positionnez la gâchette dans la zone ${triggerTargetLabel}. La mesure attendra ${(TRIGGER_SETTLE_MS / 1000).toFixed(1)} s de stabilité.`;
+    el.className = "note trigger-stability-status mash-grade-na";
     syncTriggerGuideState(side, tracker, result);
     return result;
   }
   const status = triggerStabilityStatus(result);
   el.textContent = status.label;
-  el.className = `note mash-grade-${status.key}`;
+  el.className = `note trigger-stability-status mash-grade-${status.key}`;
   syncTriggerGuideState(side, tracker, result);
   return result;
 }
@@ -1577,11 +1623,12 @@ function loop() {
       const cell = buttonCells[i];
       const wasPressed = diagnosticSession.prevButtonStates[i] || false;
       const pressed = isButtonPressed(btn, i, wasPressed);
+      const trackPassiveChatter = isPassiveChatterButton(i);
       if (cell) {
         if (pressed) cell.classList.add("active");
         else cell.classList.remove("active");
       }
-      if (pressed && !wasPressed) {
+      if (trackPassiveChatter && pressed && !wasPressed) {
         const label = currentLabels[i] || `Bouton ${i}`;
         pressCountByButton.set(label, (pressCountByButton.get(label) || 0) + 1);
         const sinceRelease = diagnosticSession.lastReleaseTimes[i];
@@ -1598,7 +1645,7 @@ function loop() {
           logPress(label, { value: btn.value, eventTime });
         }
       }
-      if (!pressed && wasPressed) {
+      if (trackPassiveChatter && !pressed && wasPressed) {
         diagnosticSession.lastReleaseTimes[i] = eventTime;
       }
       diagnosticSession.prevButtonStates[i] = pressed;

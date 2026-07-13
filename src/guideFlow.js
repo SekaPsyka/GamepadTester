@@ -62,8 +62,8 @@ export function buildGuideFlow({
       task("amplitude-right", "Amplitude du stick droit", taskState(calibration.right), calibrationDetail(calibration.right)),
     ],
     triggers: [
-      task("trigger-lt", "Stabilité de LT / L2", taskState(triggers.lt), "Maintien à mi-course"),
-      task("trigger-rt", "Stabilité de RT / R2", taskState(triggers.rt), "Maintien à mi-course"),
+      task("trigger-lt", "Stabilité de LT / L2", taskState(triggers.lt), triggers.lt?.detail || "Maintien à mi-course"),
+      task("trigger-rt", "Stabilité de RT / R2", taskState(triggers.rt), triggers.rt?.detail || "Maintien à mi-course"),
       vibrationTask("strong", "Vibration du moteur gauche"),
       vibrationTask("weak", "Vibration du moteur droit"),
     ],

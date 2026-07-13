@@ -147,7 +147,7 @@ export function computeDiagnosticVerdict(report) {
 
   const { lt: ltStability, rt: rtStability } = report.triggerStability;
   if (!ltStability.measured && !rtStability.measured) {
-    items.push({ status: "neutral", title: "Gâchettes", text: "Stabilité pas encore mesurée, maintenez chaque gâchette à mi-course quelques secondes." });
+    items.push({ status: "neutral", title: "Gâchettes", text: "Stabilité pas encore mesurée : placez chaque gâchette entre 35 et 65 %, puis attendez que le palier se stabilise avant les cinq secondes de mesure." });
   } else {
     const ltGrade = triggerStabilityGrade(ltStability);
     const rtGrade = triggerStabilityGrade(rtStability);

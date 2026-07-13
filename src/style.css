@@ -1046,6 +1046,7 @@ canvas.stick {
 }
 
 .trigger-bar-bg {
+  position: relative;
   background: #060710;
   border-radius: 6px;
   height: 14px;
@@ -1059,10 +1060,42 @@ canvas.stick {
 }
 
 .trigger-bar-fill {
+  position: relative;
+  z-index: 1;
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, var(--accent-alt), var(--accent));
   transition: width 0.03s linear;
+}
+
+.trigger-target-zone {
+  position: absolute;
+  z-index: 2;
+  inset: 0 auto 0 35%;
+  width: 30%;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-inline: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  transition-property: background-color, box-shadow;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.trigger-gauge[data-phase="stabilizing"] .trigger-target-zone,
+.trigger-gauge[data-phase="measuring"] .trigger-target-zone {
+  background: color-mix(in srgb, var(--accent) 23%, transparent);
+  box-shadow: inset 0 0 10px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.trigger-gauge[data-phase="measuring"] .trigger-bar-bg {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--panel-border));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.trigger-stability-status {
+  min-height: 2.8em;
+  margin-bottom: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .trigger-label {

@@ -34,6 +34,13 @@ export function isButtonPressed(btn, index, wasPressed) {
   return btn.pressed || btn.value > PRESS_THRESHOLD;
 }
 
+// Les gâchettes analogiques ont leur propre diagnostic de stabilité. Les traiter aussi
+// comme des boutons digitaux dans l'observation passive transforme les passages répétés
+// autour du seuil en faux doubles déclenchements.
+export function isPassiveChatterButton(index) {
+  return !TRIGGER_BUTTON_INDICES.has(index);
+}
+
 export function detectControllerType(id = "") {
   const lower = id.toLowerCase();
   if (/xbox|xinput/.test(lower)) return "xbox";
@@ -131,6 +138,13 @@ export class NeutralDriftTracker {
 // Mesurer la "stabilité" à 0 (repos) n'a pas de sens, ce n'est pas un signal analogique
 // engagé.
 const TRIGGER_ENGAGED_MIN = 0.15;
+export const TRIGGER_TARGET_MIN = 0.35;
+export const TRIGGER_TARGET_MAX = 0.65;
+export const TRIGGER_SETTLE_MS = 700;
+// On cherche ici l'arrêt du mouvement volontaire, pas un signal parfaitement plat.
+// Comparer les moyennes des deux moitiés laisse passer un capteur qui oscille autour
+// d'un palier afin que ces oscillations soient bien observées pendant la vraie mesure.
+const TRIGGER_SETTLE_DRIFT_TOLERANCE = 0.02;
 // Durée à tenir avant de valider la mesure: assez longue pour moyenner le bruit sur
 // plusieurs échantillons, assez courte pour rester confortable à tenir à la main.
 export const TRIGGER_REQUIRED_HOLD_MS = 5000;
@@ -172,23 +186,61 @@ export function triggerStabilityGrade(result) {
 // l'export du rapport.
 export class TriggerStabilityTracker {
   constructor() {
-    this.samples = []; // { value, t }, vidé à chaque relâchement
+    this.samples = []; // Échantillons de la mesure, sans la mise en position.
+    this.settleSamples = [];
     this.holdStartedAt = null;
     this.locked = false;
+    this.phase = "idle";
+    this.currentValue = 0;
+    this.notice = null;
     this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
   }
 
   update(value, now) {
+    this.currentValue = value;
     if (value < TRIGGER_ENGAGED_MIN) {
       // Gâchette relâchée: on abandonne la tentative en cours mais on garde la dernière
       // mesure déjà validée plutôt que de l'effacer.
       this.samples = [];
+      this.settleSamples = [];
       this.holdStartedAt = null;
       this.locked = false;
+      this.phase = this.result.measured ? "complete" : "idle";
+      this.notice = null;
       return;
     }
     if (this.locked) return;
-    if (this.holdStartedAt == null) this.holdStartedAt = now;
+
+    const inTarget = value >= TRIGGER_TARGET_MIN && value <= TRIGGER_TARGET_MAX;
+    if (this.holdStartedAt == null) {
+      if (!inTarget) {
+        this.settleSamples = [];
+        this.phase = "positioning";
+        return;
+      }
+
+      this.phase = "stabilizing";
+      this.settleSamples.push({ value, t: now });
+      while (this.settleSamples.length > 1 && now - this.settleSamples[1].t >= TRIGGER_SETTLE_MS) {
+        this.settleSamples.shift();
+      }
+      if (this.settleSamples.length < 4 || now - this.settleSamples[0].t < TRIGGER_SETTLE_MS) return;
+
+      const settleValues = this.settleSamples.map((sample) => sample.value);
+      const settleMid = Math.floor(settleValues.length / 2);
+      const settleFirstAvg = settleValues.slice(0, settleMid).reduce((sum, sample) => sum + sample, 0) / settleMid;
+      const settleSecondValues = settleValues.slice(settleMid);
+      const settleSecondAvg = settleSecondValues.reduce((sum, sample) => sum + sample, 0) / settleSecondValues.length;
+      if (Math.abs(settleSecondAvg - settleFirstAvg) > TRIGGER_SETTLE_DRIFT_TOLERANCE) return;
+
+      this.holdStartedAt = now;
+      this.samples = [{ value, t: now }];
+      this.settleSamples = [];
+      this.phase = "measuring";
+      this.notice = null;
+      return;
+    }
+
     this.samples.push({ value, t: now });
 
     if (now - this.holdStartedAt < TRIGGER_REQUIRED_HOLD_MS) return;
@@ -198,7 +250,17 @@ export class TriggerStabilityTracker {
     const firstHalfAvg = values.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
     const secondHalfValues = values.slice(mid);
     const secondHalfAvg = secondHalfValues.reduce((a, b) => a + b, 0) / secondHalfValues.length;
-    if (Math.abs(secondHalfAvg - firstHalfAvg) > TRIGGER_HOLD_TOLERANCE) return;
+    if (Math.abs(secondHalfAvg - firstHalfAvg) > TRIGGER_HOLD_TOLERANCE) {
+      // Une dérive lente sur toute la capture ressemble davantage à un changement de
+      // position du doigt qu'à un bruit de capteur. On recommence explicitement la
+      // préparation au lieu de laisser le compte à rebours bloqué à zéro.
+      this.samples = [];
+      this.holdStartedAt = null;
+      this.settleSamples = inTarget ? [{ value, t: now }] : [];
+      this.phase = inTarget ? "stabilizing" : "positioning";
+      this.notice = "moved";
+      return;
+    }
 
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
     const range = Math.max(...values) - Math.min(...values);
@@ -209,21 +271,43 @@ export class TriggerStabilityTracker {
 
     this.result = { measured: true, range, stepCount, level: avg };
     this.locked = true;
+    this.phase = "complete";
+    this.notice = null;
   }
 
   // Fraction (0..1) de la durée de maintien requise déjà écoulée, pour afficher un
   // compte à rebours pendant que l'utilisateur tient la gâchette.
   getProgress(now) {
     if (this.locked) return 1;
-    if (this.holdStartedAt == null) return 0;
-    return Math.min(1, (now - this.holdStartedAt) / TRIGGER_REQUIRED_HOLD_MS);
+    if (this.phase === "measuring") {
+      return Math.min(1, (now - this.holdStartedAt) / TRIGGER_REQUIRED_HOLD_MS);
+    }
+    if (this.phase === "stabilizing" && this.settleSamples.length) {
+      return Math.min(1, (now - this.settleSamples[0].t) / TRIGGER_SETTLE_MS);
+    }
+    return 0;
+  }
+
+  getStatus(now) {
+    const progress = this.getProgress(now);
+    const durationMs = this.phase === "stabilizing" ? TRIGGER_SETTLE_MS : TRIGGER_REQUIRED_HOLD_MS;
+    return {
+      phase: this.phase,
+      progress,
+      remainingMs: (this.phase === "stabilizing" || this.phase === "measuring")
+        ? Math.max(0, durationMs * (1 - progress))
+        : 0,
+      currentValue: this.currentValue,
+      notice: this.notice,
+      retesting: this.result.measured && this.isAttempting(),
+    };
   }
 
   // Une tentative est en cours (gâchette tenue, pas encore validée) — y compris quand un
   // résultat précédent est déjà affiché, pour distinguer "nouvelle mesure en cours" de
   // "résultat de la dernière mesure".
   isAttempting() {
-    return this.holdStartedAt != null && !this.locked;
+    return ["positioning", "stabilizing", "measuring"].includes(this.phase) && !this.locked;
   }
 
   getResult() {
@@ -232,8 +316,12 @@ export class TriggerStabilityTracker {
 
   reset() {
     this.samples = [];
+    this.settleSamples = [];
     this.holdStartedAt = null;
     this.locked = false;
+    this.phase = "idle";
+    this.currentValue = 0;
+    this.notice = null;
     this.result = { measured: false, range: 0, stepCount: 0, level: 0 };
   }
 }

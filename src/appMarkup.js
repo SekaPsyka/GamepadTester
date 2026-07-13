@@ -170,17 +170,17 @@ export const APP_MARKUP = `
 
     <section class="panel panel--trigger-vibration span-2" id="triggerPanel" data-guide-section="triggers">
       <h2>Gâchettes &amp; vibration</h2>
-      <p class="measurement-instruction">Maintenez chaque gâchette à mi-course pendant cinq secondes. La mesure décrit la régularité du signal, sans prétendre certifier l'état mécanique du capteur.</p>
+      <p class="measurement-instruction">Placez chaque gâchette dans la zone 35–65 %, puis immobilisez votre doigt. Une courte stabilisation précède automatiquement les cinq secondes réellement analysées.</p>
       <div class="trigger-gauges">
         <div class="trigger-gauge">
           <div class="trigger-label"><span>LT</span><span class="mono" id="ltVal">0%</span></div>
-          <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="ltBar"></div></div>
-          <p class="note" id="ltStabilityResult" title="Maintenez la gâchette à mi-course pour observer la régularité du signal exposé par le navigateur.">Stabilité : maintenez à mi-course pour mesurer...</p>
+          <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-target-zone" aria-hidden="true"></div><div class="trigger-bar-fill" id="ltBar"></div></div>
+          <p class="note trigger-stability-status" id="ltStabilityResult" role="status" aria-live="polite" title="La mesure démarre uniquement après avoir stabilisé la gâchette dans la zone indiquée.">Positionnez la gâchette dans la zone 35–65 %. Le chronomètre attendra que le palier soit stable.</p>
         </div>
         <div class="trigger-gauge">
           <div class="trigger-label"><span>RT</span><span class="mono" id="rtVal">0%</span></div>
-          <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-bar-fill" id="rtBar"></div></div>
-          <p class="note" id="rtStabilityResult" title="Maintenez la gâchette à mi-course pour observer la régularité du signal exposé par le navigateur.">Stabilité : maintenez à mi-course pour mesurer...</p>
+          <div class="trigger-bar-bg trigger-bar-bg--thick"><div class="trigger-target-zone" aria-hidden="true"></div><div class="trigger-bar-fill" id="rtBar"></div></div>
+          <p class="note trigger-stability-status" id="rtStabilityResult" role="status" aria-live="polite" title="La mesure démarre uniquement après avoir stabilisé la gâchette dans la zone indiquée.">Positionnez la gâchette dans la zone 35–65 %. Le chronomètre attendra que le palier soit stable.</p>
         </div>
       </div>
 
@@ -231,7 +231,7 @@ export const APP_MARKUP = `
     <section class="panel span-2" id="buttonsPanel" data-guide-section="buttons">
       <h2>Boutons <span class="note" style="display:inline">(doubles déclenchements détectés : <span id="chatterCount" class="value mono" style="color:var(--accent-alt)">0</span>)</span></h2>
       <div class="buttons-grid" id="buttonsGrid"></div>
-      <p class="note">Un double déclenchement involontaire, aussi appelé chatter, est signalé lorsqu'un bouton se relâche puis se réenfonce en moins de 60 ms. Un événement isolé doit toujours être confirmé par le diagnostic guidé.</p>
+      <p class="note">Un double déclenchement involontaire, aussi appelé chatter, est signalé lorsqu'un bouton numérique se relâche puis se réenfonce en moins de 60 ms. Les gâchettes analogiques sont exclues de ce compteur et analysées séparément ci-dessus.</p>
     </section>
 
     <section class="panel span-2 press-history-panel" data-guide-section="buttons">
@@ -246,7 +246,7 @@ export const APP_MARKUP = `
         </div>
         <div id="pressLog" class="press-log" role="log" aria-live="polite" aria-label="Historique des dix derniers appuis"></div>
       </div>
-      <p class="note">Les dix derniers appuis sont conservés pour repérer les doubles déclenchements et vérifier le déroulement du test.</p>
+      <p class="note">Les dix derniers appuis numériques sont conservés pour repérer les doubles déclenchements et vérifier le déroulement du test.</p>
     </section>
 
     <section class="panel span-2 results-panel" id="resultsPanel" data-guide-section="summary">

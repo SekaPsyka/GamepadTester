@@ -306,7 +306,7 @@ export function buildDiagnosticPdf(report, jsPDF, autoTable) {
       grade.key === "poor" ? "(instable)" : grade.key === "fair" ? (grade.isolated ? "(écart isolé, à confirmer)" : "(léger bruit)") : "(lisse)";
     const stabilityText = result.measured
       ? `Écart à palier tenu: ${(result.range * 100).toFixed(1)}% (${result.stepCount} saut(s)) ${qualifier}`
-      : "Pas encore mesuré (maintenez à mi-course).";
+      : "Pas encore mesuré (placez entre 35 et 65 %, puis stabilisez le palier).";
     const stabilityLines = doc.splitTextToSize(stabilityText, colWidth);
     doc.setFont("courier", "normal");
     doc.setFontSize(8);
