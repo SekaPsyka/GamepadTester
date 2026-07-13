@@ -609,6 +609,14 @@ body[data-app-mode="guided"] .header-actions {
   width: auto;
 }
 
+body[data-app-mode="guided"] .stick-settings {
+  display: none;
+}
+
+body[data-app-mode="guided"] .stick-row {
+  align-items: center;
+}
+
 body[data-app-mode="guided"] .stick-panel--left { order: -3; }
 body[data-app-mode="guided"] .stick-panel--right { order: -2; }
 body[data-app-mode="guided"] .neutral-panel { order: -1; }
@@ -824,14 +832,91 @@ body[data-app-mode="guided"] #measureNeutralBtn {
   min-width: 0;
 }
 
+.stick-visual {
+  display: grid;
+  flex: 0 0 min(210px, 44%);
+  gap: 12px;
+  min-width: 0;
+}
+
 canvas.stick {
-  width: min(180px, 42%);
+  width: min(180px, 100%);
   height: auto;
-  flex: none;
+  justify-self: center;
   aspect-ratio: 1;
   background: #060710;
   border-radius: 50%;
   border: 1px solid var(--panel-border);
+}
+
+.stick-progress {
+  display: grid;
+  gap: 7px;
+  padding: 10px 11px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.stick-progress-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.stick-progress-heading span {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.stick-progress-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-border) 72%, var(--bg));
+}
+
+.stick-progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease-out;
+}
+
+.stick-progress p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.stick-progress[data-state="active"] {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--panel-border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+}
+
+.stick-progress[data-state="active"] .stick-progress-heading span {
+  color: var(--accent);
+}
+
+.stick-progress[data-state="complete"] {
+  border-color: color-mix(in srgb, var(--neon-green) 58%, var(--panel-border));
+  background: color-mix(in srgb, var(--neon-green) 6%, var(--bg));
+}
+
+.stick-progress[data-state="complete"] .stick-progress-heading span,
+.stick-progress[data-state="complete"] p {
+  color: var(--neon-green);
+}
+
+.stick-progress[data-state="complete"] .stick-progress-track span {
+  background: var(--neon-green);
 }
 
 .sliders {
@@ -1163,6 +1248,8 @@ button.btn-highlight:hover {
 @media (prefers-reduced-motion: reduce) {
   button.btn-highlight { animation: none; box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent); }
   .motor-card.active { animation: none; }
+  .stick-progress,
+  .stick-progress-track span { transition: none; }
   button { transition-duration: 0.01ms; }
   button:active:not(:disabled) { transform: none; }
 }
@@ -1786,9 +1873,14 @@ select option {
     flex-direction: column;
   }
 
-  canvas.stick {
-    width: min(180px, 70vw);
+  .stick-visual {
+    width: min(220px, 78vw);
+    flex-basis: auto;
     align-self: center;
+  }
+
+  canvas.stick {
+    width: min(180px, 100%);
   }
 
   .sliders {

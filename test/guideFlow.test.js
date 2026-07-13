@@ -17,6 +17,13 @@ test("le parcours distingue les étapes non commencées, en cours et terminées"
   });
   assert.equal(complete.steps.sticks.state, "complete");
   assert.equal(complete.steps.sticks.completedCount, 3);
+  assert.equal(complete.steps.sticks.tasks[1].detail, "3 tours terminés");
+});
+
+test("décrit la progression de rotation dans la liste des tâches", () => {
+  const flow = buildGuideFlow({ calibration: { left: { active: true } } });
+  assert.equal(flow.steps.sticks.tasks[1].detail, "Rotation en cours");
+  assert.equal(flow.steps.sticks.tasks[2].detail, "3 tours guidés à 360°");
 });
 
 test("une mesure atypique reste une mesure terminée", () => {

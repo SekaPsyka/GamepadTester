@@ -89,20 +89,29 @@ export const APP_MARKUP = `
     </section>
 
     <section class="panel stick-panel stick-panel--left" id="leftStickPanel" data-guide-section="sticks">
-      <h2>Joystick gauche</h2>
+      <h2>Stick gauche</h2>
       <div class="stick-row">
-        <canvas class="stick" id="leftCanvas" width="180" height="180" aria-label="Position du joystick gauche"></canvas>
+        <div class="stick-visual">
+          <canvas class="stick" id="leftCanvas" width="180" height="180" aria-label="Position et progression des rotations du stick gauche" aria-describedby="leftCalibHint leftCalibResult"></canvas>
+          <div class="stick-progress" id="leftCalibProgress" role="progressbar" aria-label="Rotations terminées avec le stick gauche" aria-valuemin="0" aria-valuemax="3" aria-valuenow="0" data-state="idle">
+            <div class="stick-progress-heading"><strong>Trois tours réguliers</strong><span class="mono" id="leftCalibProgressText">0 / 3 tours</span></div>
+            <div class="stick-progress-track" aria-hidden="true"><span id="leftCalibProgressFill"></span></div>
+            <p id="leftCalibHint">Poussez le stick jusqu’au bord, puis faites trois tours réguliers dans le même sens.</p>
+          </div>
+        </div>
         <div class="sliders" style="flex:1">
-          <label for="leftInner">Zone morte intérieure : <span class="mono" id="leftInnerVal"></span></label>
-          <input type="range" id="leftInner" min="0" max="0.9" step="0.01" value="0.1" />
-          <label for="leftOuter">Zone morte extérieure : <span class="mono" id="leftOuterVal"></span></label>
-          <input type="range" id="leftOuter" min="0.1" max="1" step="0.01" value="0.95" />
-          <div class="coord">
-            Brut: <b class="mono" id="leftRaw">0.00, 0.00</b><br/>
-            Ajusté: <b class="mono" id="leftAdj">0.00, 0.00</b>
+          <div class="stick-settings">
+            <label for="leftInner">Zone morte intérieure : <span class="mono" id="leftInnerVal"></span></label>
+            <input type="range" id="leftInner" min="0" max="0.9" step="0.01" value="0.1" />
+            <label for="leftOuter">Zone morte extérieure : <span class="mono" id="leftOuterVal"></span></label>
+            <input type="range" id="leftOuter" min="0.1" max="1" step="0.01" value="0.95" />
+            <div class="coord">
+              Brut: <b class="mono" id="leftRaw">0.00, 0.00</b><br/>
+              Ajusté: <b class="mono" id="leftAdj">0.00, 0.00</b>
+            </div>
           </div>
           <div class="calib-actions">
-            <button id="leftCalibBtn">Tester l'amplitude du stick</button>
+            <button id="leftCalibBtn">Commencer les 3 tours du stick</button>
             <button id="leftCalibReset" class="danger">Réinitialiser</button>
           </div>
           <p class="note" id="leftCalibResult"></p>
@@ -111,21 +120,30 @@ export const APP_MARKUP = `
       </div>
     </section>
 
-    <section class="panel stick-panel stick-panel--right" data-guide-section="sticks">
-      <h2>Joystick droit</h2>
+    <section class="panel stick-panel stick-panel--right" id="rightStickPanel" data-guide-section="sticks">
+      <h2>Stick droit</h2>
       <div class="stick-row">
-        <canvas class="stick" id="rightCanvas" width="180" height="180" aria-label="Position du joystick droit"></canvas>
+        <div class="stick-visual">
+          <canvas class="stick" id="rightCanvas" width="180" height="180" aria-label="Position et progression des rotations du stick droit" aria-describedby="rightCalibHint rightCalibResult"></canvas>
+          <div class="stick-progress" id="rightCalibProgress" role="progressbar" aria-label="Rotations terminées avec le stick droit" aria-valuemin="0" aria-valuemax="3" aria-valuenow="0" data-state="idle">
+            <div class="stick-progress-heading"><strong>Trois tours réguliers</strong><span class="mono" id="rightCalibProgressText">0 / 3 tours</span></div>
+            <div class="stick-progress-track" aria-hidden="true"><span id="rightCalibProgressFill"></span></div>
+            <p id="rightCalibHint">Poussez le stick jusqu’au bord, puis faites trois tours réguliers dans le même sens.</p>
+          </div>
+        </div>
         <div class="sliders" style="flex:1">
-          <label for="rightInner">Zone morte intérieure : <span class="mono" id="rightInnerVal"></span></label>
-          <input type="range" id="rightInner" min="0" max="0.9" step="0.01" value="0.1" />
-          <label for="rightOuter">Zone morte extérieure : <span class="mono" id="rightOuterVal"></span></label>
-          <input type="range" id="rightOuter" min="0.1" max="1" step="0.01" value="0.95" />
-          <div class="coord">
-            Brut: <b class="mono" id="rightRaw">0.00, 0.00</b><br/>
-            Ajusté: <b class="mono" id="rightAdj">0.00, 0.00</b>
+          <div class="stick-settings">
+            <label for="rightInner">Zone morte intérieure : <span class="mono" id="rightInnerVal"></span></label>
+            <input type="range" id="rightInner" min="0" max="0.9" step="0.01" value="0.1" />
+            <label for="rightOuter">Zone morte extérieure : <span class="mono" id="rightOuterVal"></span></label>
+            <input type="range" id="rightOuter" min="0.1" max="1" step="0.01" value="0.95" />
+            <div class="coord">
+              Brut: <b class="mono" id="rightRaw">0.00, 0.00</b><br/>
+              Ajusté: <b class="mono" id="rightAdj">0.00, 0.00</b>
+            </div>
           </div>
           <div class="calib-actions">
-            <button id="rightCalibBtn">Tester l'amplitude du stick</button>
+            <button id="rightCalibBtn">Commencer les 3 tours du stick</button>
             <button id="rightCalibReset" class="danger">Réinitialiser</button>
           </div>
           <p class="note" id="rightCalibResult"></p>

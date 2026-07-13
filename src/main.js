@@ -17,7 +17,10 @@ import { MashSequenceTest, buildMashQueue, gradeForChatter, buildMashVerdict } f
 import { createSilhouette, setSilhouetteType, updateSilhouette } from "./controllerSilhouette.js";
 import { buildGuideFlow, executeHapticCommand } from "./guideFlow.js";
 import { DiagnosticSession } from "./diagnosticSession.js";
-import { analyzeStickRange } from "./stickDiagnostics.js";
+import {
+  analyzeStickRange,
+  measureStickCoverage,
+} from "./stickDiagnostics.js";
 import {
   buildDiagnosticReport as createDiagnosticReport,
   computeDiagnosticVerdict,
@@ -151,8 +154,8 @@ function taskInstruction(stepId, taskId) {
   const instructions = {
     connection: ["Manette détectée automatiquement", "Le nom, le nombre de boutons et le nombre d'axes exposés par le navigateur sont affichés ci-dessous."],
     neutral: ["Posez la manette et ne la touchez plus", "Démarrez la mesure de trois secondes lorsque les deux sticks sont complètement relâchés."],
-    "amplitude-left": ["Testez l'amplitude du stick gauche", "Démarrez l'enregistrement, faites un tour complet et régulier, puis arrêtez pour analyser le tracé."],
-    "amplitude-right": ["Testez l'amplitude du stick droit", "Démarrez l'enregistrement, faites un tour complet et régulier, puis arrêtez pour analyser le tracé."],
+    "amplitude-left": ["Faites trois tours avec le stick gauche", "Poussez le stick jusqu'au bord, puis effectuez trois tours complets et réguliers dans le même sens. L'analyse s'arrêtera automatiquement après le troisième tour."],
+    "amplitude-right": ["Faites trois tours avec le stick droit", "Poussez le stick jusqu'au bord, puis effectuez trois tours complets et réguliers dans le même sens. L'analyse s'arrêtera automatiquement après le troisième tour."],
     "trigger-lt": ["Maintenez LT / L2 à mi-course", "Gardez la gâchette aussi stable que possible pendant cinq secondes. La mesure démarre automatiquement."],
     "trigger-rt": ["Maintenez RT / R2 à mi-course", "Gardez la gâchette aussi stable que possible pendant cinq secondes. La mesure démarre automatiquement."],
     "vibration-strong": ["Testez le moteur gauche", "L'application enverra une commande à 100 % pendant 600 ms, puis passera automatiquement au moteur droit."],
@@ -163,15 +166,31 @@ function taskInstruction(stepId, taskId) {
   return instructions[taskId] || ["Étape terminée", "Toutes les vérifications prévues pour cette étape ont été enregistrées."];
 }
 
+function calibrationProgressCopy(coverage) {
+  const remainingDirections = coverage.sectorCount - coverage.coveredCount;
+  if (coverage.complete) return `${coverage.requiredTurns} tours terminés — analyse en cours.`;
+  if (!coverage.directionsComplete) {
+    return `${remainingDirections} ${remainingDirections === 1 ? "direction restante" : "directions restantes"} pour boucler le premier tour. Continuez en longeant les secteurs encore éteints.`;
+  }
+  const currentTurn = Math.min(coverage.requiredTurns, coverage.completedTurns + 1);
+  return `Tour ${currentTurn} sur ${coverage.requiredTurns} en cours. Continuez régulièrement dans le même sens.`;
+}
+
+function calibrationProgressLabel(coverage) {
+  if (coverage.complete) return `${coverage.requiredTurns} / ${coverage.requiredTurns} tours`;
+  if (coverage.turns > 0) return `Tour ${Math.min(coverage.requiredTurns, coverage.completedTurns + 1)} / ${coverage.requiredTurns}`;
+  return `0 / ${coverage.requiredTurns} tours`;
+}
+
 function getGuideAction(stepId, nextTask) {
   if (stepId === "sticks") {
     if (nextTask?.id === "neutral") return { label: "Démarrer la mesure du point neutre — 3 s", run: startNeutralCapture };
     if (nextTask?.id === "amplitude-left") return {
-      label: calibration.left.active ? "Arrêter et analyser le stick gauche" : "Démarrer le test du stick gauche",
+      label: calibration.left.active ? "Arrêter et analyser maintenant" : "Commencer les 3 tours du stick gauche",
       run: () => toggleCalibration("left"),
     };
     if (nextTask?.id === "amplitude-right") return {
-      label: calibration.right.active ? "Arrêter et analyser le stick droit" : "Démarrer le test du stick droit",
+      label: calibration.right.active ? "Arrêter et analyser maintenant" : "Commencer les 3 tours du stick droit",
       run: () => toggleCalibration("right"),
     };
   }
@@ -272,6 +291,17 @@ function renderGuide() {
 
   const actionableTask = nextTask || (step.id === "summary" ? null : undefined);
   let [nowTitle, nowDescription] = taskInstruction(step.id, actionableTask?.id);
+  const calibrationSide = actionableTask?.id === "amplitude-left"
+    ? "left"
+    : actionableTask?.id === "amplitude-right"
+      ? "right"
+      : null;
+  if (calibrationSide && calibration[calibrationSide].active) {
+    const coverage = measureStickCoverage(calibration[calibrationSide].points);
+    const sideLabel = calibrationSide === "left" ? "gauche" : "droit";
+    nowTitle = `Continuez les rotations du stick ${sideLabel}`;
+    nowDescription = calibrationProgressCopy(coverage);
+  }
   const vibrationSide = actionableTask?.id === "vibration-strong" ? "strong" : actionableTask?.id === "vibration-weak" ? "weak" : null;
   if (vibrationSide && actionableTask.state === "active") {
     nowTitle = vibrationSide === "strong" ? "Commande envoyée au moteur gauche" : "Commande envoyée au moteur droit";
@@ -308,13 +338,20 @@ function renderGuide() {
     button.disabled = (!isPadConnected && index > 0) || (firstBlockingIndex >= 0 && index > firstBlockingIndex);
   });
 
+  const focusedStickTask = actionableTask?.id || (stepState.state === "complete" ? "amplitude-right" : null);
   guideSections.forEach((section) => {
-    const visible = appMode === "lab" || section.dataset.guideSection === step.id;
+    let visible = appMode === "lab" || section.dataset.guideSection === step.id;
+    if (visible && appMode === "guided" && step.id === "sticks") {
+      if (focusedStickTask === "neutral") visible = section.id === "neutralPanel";
+      if (focusedStickTask === "amplitude-left") visible = section.id === "leftStickPanel";
+      if (focusedStickTask === "amplitude-right") visible = section.id === "rightStickPanel";
+    }
     section.classList.toggle("guide-hidden", !visible);
   });
 
   guideShell.classList.toggle("guide-shell--lab", appMode === "lab");
   document.body.dataset.appMode = appMode;
+  document.body.dataset.guideTask = focusedStickTask || step.id;
   if (step.id === "summary" || appMode === "lab") renderGuidedSummary();
 }
 
@@ -643,7 +680,7 @@ function themeColor(varName) {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
 }
 
-function drawStick(ctx, canvas, rawX, rawY, adjX, adjY, inner, outer, trail) {
+function drawStick(ctx, canvas, rawX, rawY, adjX, adjY, inner, outer, trail, coverage, calibrationActive) {
   const size = canvas.width;
   const center = size / 2;
   const radius = center - 10;
@@ -663,6 +700,28 @@ function drawStick(ctx, canvas, rawX, rawY, adjX, adjY, inner, outer, trail) {
   ctx.globalAlpha = 0.5;
   ctx.stroke();
   ctx.globalAlpha = 1;
+
+  if (coverage) {
+    const guideRadius = radius - 4;
+    const gap = 0.045;
+    const completeColor = themeColor("--neon-green");
+    ctx.lineCap = "round";
+    ctx.lineWidth = calibrationActive || coverage.coveredCount > 0 ? 5 : 3;
+    for (let sector = 0; sector < coverage.sectorCount; sector++) {
+      const start = (sector / coverage.sectorCount) * Math.PI * 2 + gap;
+      const end = ((sector + 1) / coverage.sectorCount) * Math.PI * 2 - gap;
+      ctx.beginPath();
+      ctx.arc(center, center, guideRadius, start, end);
+      ctx.strokeStyle = coverage.sectors[sector]
+        ? coverage.complete ? completeColor : primary
+        : themeColor("--panel-border");
+      ctx.globalAlpha = coverage.sectors[sector] ? 0.95 : calibrationActive ? 0.72 : 0.38;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineCap = "butt";
+    ctx.lineWidth = 1;
+  }
 
   ctx.beginPath();
   ctx.arc(center, center, radius * inner, 0, Math.PI * 2);
@@ -770,55 +829,138 @@ function drawDrift(ctx, canvas, history) {
 
 
 const calibrationControls = {};
+const lastRenderedProgress = { left: "", right: "" };
+const lastAnnouncedDirectionMilestone = { left: 0, right: 0 };
+const lastAnnouncedTurn = { left: 0, right: 0 };
+const STICK_CONFIRMATION_DELAY_MS = 700;
 
 function setupCalibration(side, buttonId, resultId, resetId) {
   const btn = document.getElementById(buttonId);
   const resultEl = document.getElementById(resultId);
   const resetBtn = document.getElementById(resetId);
-  const state = calibration[side];
+  const progressEl = document.getElementById(`${side}CalibProgress`);
+  const progressText = document.getElementById(`${side}CalibProgressText`);
+  const progressFill = document.getElementById(`${side}CalibProgressFill`);
+  const hintEl = document.getElementById(`${side}CalibHint`);
 
-  calibrationControls[side] = { btn, resultEl };
+  calibrationControls[side] = { btn, resultEl, progressEl, progressText, progressFill, hintEl };
   btn.addEventListener("click", () => toggleCalibration(side));
 
   resetBtn.addEventListener("click", () => {
     diagnosticSession.resetCalibration(side);
+    lastRenderedProgress[side] = "";
+    lastAnnouncedDirectionMilestone[side] = 0;
+    lastAnnouncedTurn[side] = 0;
     syncCalibrationUI(side);
     renderGuide();
   });
 }
 
-function syncCalibrationUI(side) {
-  const { btn, resultEl } = calibrationControls[side];
-  btn.textContent = "Tester l'amplitude du stick";
-  resultEl.textContent = calibration[side].result?.message || "";
+function syncCalibrationUI(side, coverage = measureStickCoverage(calibration[side].points)) {
+  const { btn, resultEl, progressEl, progressText, progressFill, hintEl } = calibrationControls[side];
+  const state = calibration[side];
+
+  btn.textContent = state.active
+    ? "Arrêter et analyser maintenant"
+    : state.completed
+      ? "Refaire les 3 tours du stick"
+      : "Commencer les 3 tours du stick";
+  resultEl.textContent = state.result?.message || (state.active ? "Rotation en cours : le test s'arrêtera automatiquement après trois tours complets." : "");
+  progressEl.dataset.state = state.completed && coverage.complete ? "complete" : state.active ? "active" : "idle";
+  progressEl.setAttribute("aria-valuenow", Math.min(coverage.requiredTurns, coverage.turns).toFixed(2));
+  progressEl.setAttribute("aria-valuetext", `${calibrationProgressLabel(coverage)}. ${coverage.coveredCount} directions sur ${coverage.sectorCount} couvertes.`);
+  progressText.textContent = calibrationProgressLabel(coverage);
+  progressFill.style.width = `${coverage.rotationProgressPercent}%`;
+
+  if (state.completed && coverage.complete) {
+    hintEl.textContent = "Trois tours terminés — analyse effectuée sur l'ensemble des passages.";
+  } else if (state.active) {
+    hintEl.textContent = calibrationProgressCopy(coverage);
+  } else if (coverage.turns > 0) {
+    hintEl.textContent = "Test trop court — recommencez et terminez les trois tours dans le même sens.";
+  } else {
+    hintEl.textContent = "Poussez le stick jusqu'au bord, puis faites trois tours réguliers dans le même sens.";
+  }
+}
+
+function finishCalibration(side, { automatic = false } = {}) {
+  const state = calibration[side];
+  state.active = false;
+  const coverage = measureStickCoverage(state.points);
+
+  if (!coverage.complete) {
+    state.completed = false;
+    const completedText = coverage.completedTurns === 0
+      ? "aucun tour complet"
+      : `${coverage.completedTurns} ${coverage.completedTurns === 1 ? "tour complet" : "tours complets"} sur ${coverage.requiredTurns}`;
+    state.result = {
+      state: "incomplete",
+      measured: state.points.length >= 5,
+      asymmetryPercent: null,
+      roundnessPercent: null,
+      angleDeg: null,
+      message: `Test trop court : ${completedText}. Recommencez et effectuez trois tours réguliers dans le même sens.`,
+    };
+    syncCalibrationUI(side, coverage);
+    renderGuide();
+    return;
+  }
+
+  state.result = analyzeStickRange(state.points);
+  state.completed = state.result.state !== "incomplete";
+  syncCalibrationUI(side, coverage);
+  if (automatic && state.completed) {
+    const sideLabel = side === "left" ? "gauche" : "droit";
+    guideLiveStatus.textContent = `Stick ${sideLabel} : trois tours terminés, analyse terminée automatiquement.`;
+    setTimeout(() => renderGuide(), STICK_CONFIRMATION_DELAY_MS);
+    return;
+  }
+  renderGuide();
+}
+
+function updateCalibrationProgress(side) {
+  const state = calibration[side];
+  if (!state.active) return;
+  const coverage = measureStickCoverage(state.points);
+  const progressKey = `${coverage.coveredCount}:${coverage.rotationProgressPercent}`;
+  if (progressKey === lastRenderedProgress[side]) return;
+  lastRenderedProgress[side] = progressKey;
+  syncCalibrationUI(side, coverage);
+
+  const sideLabel = side === "left" ? "gauche" : "droit";
+  if (appMode === "guided" && GUIDE_STEPS[guideStepIndex].id === "sticks") {
+    guideNowTitle.textContent = `Continuez les rotations du stick ${sideLabel}`;
+    guideNowDescription.textContent = calibrationProgressCopy(coverage);
+  }
+
+  const directionMilestone = [12, 8, 4].find((value) => coverage.coveredCount >= value) || 0;
+  if (directionMilestone > lastAnnouncedDirectionMilestone[side] && !coverage.directionsComplete) {
+    lastAnnouncedDirectionMilestone[side] = directionMilestone;
+    guideLiveStatus.textContent = `Stick ${sideLabel} : ${directionMilestone} directions sur ${coverage.sectorCount} couvertes.`;
+  }
+  if (coverage.completedTurns > lastAnnouncedTurn[side] && !coverage.complete) {
+    lastAnnouncedTurn[side] = coverage.completedTurns;
+    guideLiveStatus.textContent = `Stick ${sideLabel} : tour ${coverage.completedTurns} sur ${coverage.requiredTurns} terminé.`;
+  }
+  if (coverage.complete) finishCalibration(side, { automatic: true });
 }
 
 function toggleCalibration(side) {
   const state = calibration[side];
-  const { btn, resultEl } = calibrationControls[side];
   skippedGuideSteps.delete("sticks");
   if (!state.active) {
     state.active = true;
     state.completed = false;
     state.points = [];
     state.result = null;
-    btn.textContent = "Arrêter & afficher le résultat";
-    resultEl.textContent = "Calibration en cours, faites le tour complet du stick...";
+    lastRenderedProgress[side] = "";
+    lastAnnouncedDirectionMilestone[side] = 0;
+    lastAnnouncedTurn[side] = 0;
+    syncCalibrationUI(side);
+    renderGuide();
   } else {
-    state.active = false;
-    btn.textContent = "Tester l'amplitude du stick";
-    if (state.points.length < 5) {
-      state.completed = false;
-      state.result = null;
-      resultEl.textContent = "Pas assez de données, réessayez.";
-      renderGuide();
-      return;
-    }
-    state.result = analyzeStickRange(state.points);
-    state.completed = state.result.state !== "incomplete";
-    resultEl.textContent = state.result.message;
+    finishCalibration(side);
   }
-  renderGuide();
 }
 setupCalibration("left", "leftCalibBtn", "leftCalibResult", "leftCalibReset");
 setupCalibration("right", "rightCalibBtn", "rightCalibResult", "rightCalibReset");
@@ -1280,6 +1422,11 @@ function syncDiagnosticResetUI() {
   pressLog.replaceChildren();
   mashTest = null;
   guideStepIndex = 0;
+  for (const side of ["left", "right"]) {
+    lastRenderedProgress[side] = "";
+    lastAnnouncedDirectionMilestone[side] = 0;
+    lastAnnouncedTurn[side] = 0;
+  }
 
   syncCalibrationUI("left");
   syncCalibrationUI("right");
@@ -1378,13 +1525,21 @@ function loop() {
     const leftAdj = applyDeadzone(lx, ly, leftInner, leftOuter);
     const rightAdj = applyDeadzone(rx, ry, rightInner, rightOuter);
 
-    if (calibration.left.active) calibration.left.points.push({ x: lx, y: ly });
-    if (calibration.right.active) calibration.right.points.push({ x: rx, y: ry });
+    if (calibration.left.active) {
+      calibration.left.points.push({ x: lx, y: ly });
+      updateCalibrationProgress("left");
+    }
+    if (calibration.right.active) {
+      calibration.right.points.push({ x: rx, y: ry });
+      updateCalibrationProgress("right");
+    }
 
     updateNeutralCapture(lx, ly, rx, ry, now, frameGapMs);
 
-    drawStick(leftCtx, leftCanvas, lx, ly, leftAdj.x, leftAdj.y, leftInner, leftOuter, calibration.left.points);
-    drawStick(rightCtx, rightCanvas, rx, ry, rightAdj.x, rightAdj.y, rightInner, rightOuter, calibration.right.points);
+    const leftCoverage = measureStickCoverage(calibration.left.points);
+    const rightCoverage = measureStickCoverage(calibration.right.points);
+    drawStick(leftCtx, leftCanvas, lx, ly, leftAdj.x, leftAdj.y, leftInner, leftOuter, calibration.left.points, leftCoverage, calibration.left.active);
+    drawStick(rightCtx, rightCanvas, rx, ry, rightAdj.x, rightAdj.y, rightInner, rightOuter, calibration.right.points, rightCoverage, calibration.right.active);
 
     document.getElementById("leftRaw").textContent = `${lx.toFixed(2)}, ${ly.toFixed(2)}`;
     document.getElementById("leftAdj").textContent = `${leftAdj.x.toFixed(2)}, ${leftAdj.y.toFixed(2)}`;

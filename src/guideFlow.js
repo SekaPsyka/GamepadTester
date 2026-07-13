@@ -29,6 +29,11 @@ export function buildGuideFlow({
   skippedSteps = [],
 } = {}) {
   const skipped = new Set(skippedSteps);
+  const calibrationDetail = (state = {}) => state.complete
+    ? "3 tours terminés"
+    : state.active
+      ? "Rotation en cours"
+      : "3 tours guidés à 360°";
   const vibrationTask = (side, label) => {
     const commandState = vibrationCommands[side] || "pending";
     const state = vibrationSupported === false
@@ -53,8 +58,8 @@ export function buildGuideFlow({
     overview: [task("connection", "Manette détectée", taskState({ complete: connected }))],
     sticks: [
       task("neutral", "Point neutre des deux sticks", taskState({ complete: neutral.measured, active: neutral.active }), "Mesure de 3 s"),
-      task("amplitude-left", "Amplitude du stick gauche", taskState(calibration.left), "Rotation complète"),
-      task("amplitude-right", "Amplitude du stick droit", taskState(calibration.right), "Rotation complète"),
+      task("amplitude-left", "Amplitude du stick gauche", taskState(calibration.left), calibrationDetail(calibration.left)),
+      task("amplitude-right", "Amplitude du stick droit", taskState(calibration.right), calibrationDetail(calibration.right)),
     ],
     triggers: [
       task("trigger-lt", "Stabilité de LT / L2", taskState(triggers.lt), "Maintien à mi-course"),
